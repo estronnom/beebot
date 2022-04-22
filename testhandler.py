@@ -1,7 +1,7 @@
 from telebot.async_telebot import AsyncTeleBot
 from telebot import apihelper
 import datetime as dt
-import locale
+import logging
 import asyncio
 import io
 
@@ -12,6 +12,8 @@ from markups import markup as mk
 bot = AsyncTeleBot(constants.APIKEY, parse_mode=None)
 db = dbHandler(constants.DBPARAMS)
 apihelper.SESSION_TIME_TO_LIVE = 300
+logging.basicConfig(format='[%(levelname) 5s/%(asctime)s] %(name)s: %(message)s',
+                    level=logging.WARNING)
 stack = {}
 rolemapping = {'user': 'пользователь', 'owner': 'владелец'}
 month = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
@@ -36,6 +38,10 @@ async def messageHandler(message):
 @bot.message_handler(commands=['authuser', 'authowner'])
 async def auth(message):
     role = message.text[5:]
+    currentRole = db.ex('SELECT role FROM employee WHERE id = %s', (message.chat.id,))
+    if currentRole and currentRole[0][0] == role:
+        await bot.send_message(message.chat.id, 'Вы уже авторизованы')
+        return
     for owner in db.ex("SELECT chatid FROM employee WHERE role = 'owner'"):
         await bot.send_message(owner[0], f'Новый запрос на авторизацию пользователя от @{message.chat.username}\nЗапрашиваемая роль: {rolemapping[role]}', reply_markup=mk.createMarkup(1, ['Авторизовать'], [f'auth//{message.chat.username}//{message.chat.id}//{role}//{owner[0]}']))
     await bot.send_message(message.chat.id, 'Запрос на авторизацию успешно отправлен, ожидайте ответа администратора')
@@ -53,28 +59,28 @@ def clearUserStack(id):
     stack[id] = {}
 
 
-def periodHandler(calldata, index):
+def periodHandler(calldata, index, keyword, table):
     try:
         period = int(calldata[index:])
     except ValueError:
         return ''
     else:
-        return f" WHERE time >= NOW() - INTERVAL '{period} day'"
+        return f" {keyword} {table}.time >= NOW() - INTERVAL '{period} day'"
 
 
 def csvCreator(headers, array):
-    rows = '\n'.join([','.join([str(obj) for obj in item]) for item in array])
+    rows = '\n'.join([';'.join([str(obj).replace(';',',') for obj in item]) for item in array])
     return io.StringIO(headers + rows)
 
 
 async def csvLoadSender(idUser, expense, callData):
-    period = periodHandler(callData, 12)
+    period = periodHandler(callData, 12, 'AND', 'task')
     if expense:
         load = db.ex("SELECT date_trunc('minute', time), task.object, COALESCE(employee.name, employee.handle), amount, note FROM expenses JOIN task ON taskid = task.id JOIN employee ON employeeid = employee.id WHERE confirmed = True" + period)
-        headers = 'Время,Объект,Сотрудник,Сумма,Заметка\n'
+        headers = 'Время;Объект;Сотрудник;Сумма;Заметка\n'
     else:
         load = db.ex("SELECT date_trunc('minute', time), task.object, COALESCE(employee.name, employee.handle), income FROM employeetotask JOIN employee ON employeeid = employee.id JOIN task ON taskid = task.id WHERE main = true" + period)
-        headers = 'Время,Объект,Сотрудник,Сумма\n'
+        headers = 'Время;Объект;Сотрудник;Сумма\n'
     if not load:
         await bot.send_message(idUser, 'Записей за данный период не найдено')
     else:
@@ -85,7 +91,6 @@ async def insertDigit(message, direction, note, func):
     try:
         digit = func(message.text.replace(',', '.'))
         stack[message.chat.id][direction] = digit
-        print(f'{direction} is {digit}')
         if note:
             await bot.send_message(message.chat.id, note)
     except ValueError:
@@ -93,9 +98,10 @@ async def insertDigit(message, direction, note, func):
 
 
 def coalesce(array):
-    if array:
+    try:
         return int(array[0][0])
-    return 0
+    except:
+        return 0
 
 
 async def getAutoList():
@@ -111,7 +117,6 @@ async def getAutoList():
 
 @bot.message_handler(func=lambda message: stackFilter(message, 'creatingTask') or message.text == '/skip')
 async def createTask(message):
-    print('got in createTask')
     if not stack[message.chat.id]['taskObject']:
         try:
             idObject = int(message.text)
@@ -120,7 +125,6 @@ async def createTask(message):
             stack[message.chat.id]['taskObject'] = objectNameGot
         except ValueError:
             stack[message.chat.id]['taskObject'] = message.text
-        print('Task object is', stack[message.chat.id]['taskObject'])
         carList = await getAutoList()
         await bot.send_message(message.chat.id, 'Теперь введите номер(цифру перед названием) автомобиля, на котором была совершена поездка\n' + carList)
     elif not stack[message.chat.id]['taskCar']:
@@ -130,7 +134,6 @@ async def createTask(message):
                 await bot.send_message(message.chat.id, 'Машины с таким id не найдено в базе, попробуйте еще раз')
             else:
                 stack[message.chat.id]['taskCar'] = idCar
-                print('Task car is', stack[message.chat.id]['taskCar'])
                 employeeList = await getEmployees(coeff=False)
                 await bot.send_message(message.chat.id, 'Отлично, теперь введите номер напарника, с которым вы выполняли задачу\nЕсли вы выполняли ее самостоятельно, то отправьте слово /skip\n\n' + employeeList)
         except ValueError:
@@ -149,7 +152,6 @@ async def createTask(message):
                     await bot.send_message(message.chat.id, 'Супер, теперь введите количество километров, затраченных на поездку')
             except ValueError:
                 await bot.send_message(message.chat.id, 'Число введено некорректно, попробуйте еще раз')
-        print('Task buddy is', stack[message.chat.id]['taskBuddy'])
     elif not stack[message.chat.id]['taskKm']:
         await insertDigit(message, 'taskKm', 'Отлично, теперь введите количество часов, которое заняла поездка', int)
     elif not stack[message.chat.id]['taskTime']:
@@ -184,7 +186,6 @@ async def createTask(message):
                 if expense and len(expense) > 1:
                     stack[message.chat.id]['taskExpenses'].append(
                         (value, ' '.join(expense[1:])))
-                    print(stack[message.chat.id]['taskExpenses'])
     else:
         await clearUserStack(message.chat.id)
         await bot.send_message(message.chat.id, 'С отчетом о поездке произошла ошибка :(\nПерейдите в личный кабинет /office и попробуйте еще раз')
@@ -282,7 +283,7 @@ async def callbackQuery(call):
         employeeList = await getEmployees(coeff=True)
         await bot.send_message(call.from_user.id, 'Список сотрудников:\n' + employeeList, reply_markup=mk.createMarkup(1, ['Обновить информацию', 'Удалить'], ['adEmployeeUpdate', 'adEmployeeDelete']))
     elif call.data == "adEmployeeUpdate":
-        await bot.send_message(call.from_user.id, 'Сотрудник есть в системе, однако ему нужно назначить имя, зарплату и коэффициент\nВведите номер сотрудника, информацию о котором собираетесь редактировать')
+        await bot.send_message(call.from_user.id, 'Введите номер сотрудника, информацию о котором собираетесь редактировать')
         stack[call.from_user.id]['updateEmployee'] = True
         stack[call.from_user.id]['updateEmployeeId'] = None
         stack[call.from_user.id]['updateEmployeeName'] = None
@@ -308,12 +309,14 @@ async def callbackQuery(call):
     elif call.data == 'adPivot':
         await bot.send_message(call.from_user.id, 'Выберите период выгрузки', reply_markup=mk.createMarkup(2, ['24 часа', 'Неделя', 'Месяц', 'Все время'], ['loadPivot1', 'loadPivot7', 'loadPivot30', 'loadPivotAll']))
     elif call.data.startswith('loadPivot'):
-        period = periodHandler(call.data, 9)
+        period = periodHandler(call.data, 9, 'WHERE', 'task')
         income = db.ex('SELECT sum(income) FROM task' + period)
         income = coalesce(income)
+        period = periodHandler(call.data, 9, 'AND', 'task')
         expenses = db.ex(
             'SELECT sum(amount) FROM expenses JOIN task ON task.id = expenses.taskid WHERE confirmed = True' + period)
         expenses = coalesce(expenses)
+        period = periodHandler(call.data, 9, 'WHERE', 'payments')
         wage = db.ex(
             'SELECT sum(payments.amount) FROM payments JOIN employeetotask ON employeetotaskid = employeetotask.id JOIN task ON taskid = task.id' + period)
         wage = coalesce(wage)
@@ -321,7 +324,9 @@ async def callbackQuery(call):
         if not period:
             pivot = 'Сводка за все время:\n'
         else:
-            days = period.split("'")[1]
+            print(period)
+            days = period.split("'")[1].split()[0]
+            print(days)
             pivot = f'Сводка за {days} {"день" if int(days) == 1 else "дней"}\n'
         pivot = pivot + \
             f"Доходы: {income}\nРасходы: {expenses}\nРасходы на З/П: {wage}\nПрибыль: {profit}"
@@ -343,7 +348,7 @@ async def callbackQuery(call):
         if load:
             employeeToTaskId = load[0][4]
             amount = load[0][3]
-            load = f'Выплата для сотрудника {load[0][0]} за поездку на объект {load[0][1]}\nЗатрачено часов: {load[0][2]}\nВыплата: {load[0][3]}'
+            load = f'Выплата для сотрудника {load[0][0]} за поездку на объект {load[0][1]}\nЗатрачено часов: {load[0][2]}\nВыплата: {int(load[0][3])}'
             await bot.send_message(call.from_user.id, load, reply_markup=mk.createMarkup(1, ['Подтвердить выплату', 'Отклонить выплату'], [f'adWageStartApply//{employeeToTaskId}//{amount}', f'adWageStartReject//{employeeToTaskId}']))
         else:
             await bot.send_message(call.from_user.id, 'Не найдено неоплаченных поездок\n/office')
@@ -376,7 +381,6 @@ async def callbackQuery(call):
         else:
             markup = mk.createMarkup(2, ['\U00002B05', '\U000027A1'], [
                                      f'userIncome{period + 1}', f'userIncome{period - 1}'])
-        print(load)
         if not load[0][0]:
             load = 'Доходов за данный период не найдено'
         else:
@@ -384,16 +388,16 @@ async def callbackQuery(call):
         monthNum = (dt.datetime.today() - dt.timedelta(days=period*30)).month
         await bot.edit_message_text(f'Доходы за {month[monthNum - 1]}\n{load}', call.from_user.id, call.message.id, reply_markup=markup)
     elif call.data == 'adObjects':
-        load = db.ex("SELECT task.id, date_trunc('minutes', time), object, (SELECT name FROM employeetotask JOIN employee ON employeeid = employee.id WHERE task.id = taskid AND main = true), (SELECT name FROM employeetotask JOIN employee ON employeeid = employee.id WHERE task.id = taskid AND main = false), auto.name, kmspent, hoursspent, income, (SELECT sum(amount) FROM expenses WHERE taskid = task.id WHERE confirmed = True) FROM task JOIN auto ON task.car = auto.id;")
+        load = db.ex("SELECT task.id, date_trunc('minutes', time), object, (SELECT name FROM employeetotask JOIN employee ON employeeid = employee.id WHERE task.id = taskid AND main = true), (SELECT name FROM employeetotask JOIN employee ON employeeid = employee.id WHERE task.id = taskid AND main = false), auto.name, kmspent, hoursspent, income, (SELECT sum(amount) FROM expenses WHERE taskid = task.id AND confirmed = True) FROM task JOIN auto ON task.car = auto.id;")
         if not load:
             await bot.send_message(call.from_user.id, 'Поездок не найдено')
         else:
-            await bot.send_document(call.from_user.id, csvCreator('ID,Дата,Объект,Сотрудник,Напарник,Авто,Километраж,Длительность,Доход,Расход\n', load), visible_file_name='Поездки.csv')
+            await bot.send_document(call.from_user.id, csvCreator('ID;Дата;Объект;Сотрудник;Напарник;Авто;Километраж;Длительность;Доход;Расход\n', load), visible_file_name='Поездки.csv')
     elif call.data.startswith('adLoadWage'):
         if call.data == 'adLoadWage':
             await bot.send_message(call.from_user.id, 'Выберите период выгрузки транзакций З\П', reply_markup=mk.createMarkup(2, ['24 часа', 'Неделя', 'Месяц', 'Все время'], ['adLoadWage1', 'adLoadWage7', 'adLoadWage30', 'adLoadWageAll']))
         else:
-            period = periodHandler(call.data, 10)
+            period = periodHandler(call.data, 10, 'WHERE', 'payments')
             load = db.ex(
                 f'SELECT employee.name, sum(amount) FROM payments JOIN employeetotask ON employeetotask.id = employeetotaskid JOIN employee ON employeeid = employee.id {period} GROUP BY employee.name')
             if not load:

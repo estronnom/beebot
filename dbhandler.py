@@ -11,10 +11,15 @@ class dbHandler():
         self.conn.close()
 
     def ex(self, query, param=None):
-        if not param:
-            self.cur.execute(query)
-        else:
-            self.cur.execute(query, param)
+        try:
+            if not param:
+                self.cur.execute(query)
+            else:
+                self.cur.execute(query, param)
+        except Exception as exc:
+            self.conn.commit()
+            print(exc)
+            return
         try:
             self.conn.commit()
             return self.cur.fetchall()

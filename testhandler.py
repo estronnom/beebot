@@ -38,7 +38,8 @@ async def messageHandler(message):
 @bot.message_handler(commands=['authuser', 'authowner'])
 async def auth(message):
     role = message.text[5:]
-    currentRole = db.ex('SELECT role FROM employee WHERE id = %s', (message.chat.id,))
+    currentRole = db.ex(
+        'SELECT role FROM employee WHERE id = %s', (message.chat.id,))
     if currentRole and currentRole[0][0] == role:
         await bot.send_message(message.chat.id, 'Вы уже авторизованы')
         return
@@ -69,7 +70,8 @@ def periodHandler(calldata, index, keyword, table):
 
 
 def csvCreator(headers, array):
-    rows = '\n'.join([';'.join([str(obj).replace(';',',') for obj in item]) for item in array])
+    rows = '\n'.join([';'.join([str(obj).replace(';', ',')
+                     for obj in item]) for item in array])
     return io.StringIO(headers + rows)
 
 
@@ -399,19 +401,21 @@ async def callbackQuery(call):
         else:
             period = periodHandler(call.data, 10, 'WHERE', 'payments')
             load = db.ex(
-                f'SELECT employee.name, sum(amount) FROM payments JOIN employeetotask ON employeetotask.id = employeetotaskid JOIN employee ON employeeid = employee.id {period} GROUP BY employee.name')
+                f'SELECT COALESCE(employee.name, employee.handle), sum(amount) FROM payments JOIN employeetotask ON employeetotask.id = employeetotaskid JOIN employee ON employeeid = employee.id {period} GROUP BY employee.handle')
             if not load:
                 await bot.send_message(call.from_user.id, 'Выплат за данный период не найдено')
             else:
                 await bot.send_document(call.from_user.id, csvCreator('Сотрудник,Выплата\n', load), visible_file_name='Зарплаты.csv')
     elif call.data.startswith('adApproveExpenses'):
         if call.data != 'adApproveExpenses':
-            db.ex('UPDATE expenses SET confirmed = %s WHERE id = %s', (call.data[17:].startswith('Acc'), call.data[20:]))
-        load = db.ex('SELECT expenses.id, task.object, employee.name, amount, note FROM expenses JOIN task ON task.id = taskid JOIN employee ON employeeid = employee.id WHERE confirmed IS NULL LIMIT 1; ')
+            db.ex('UPDATE expenses SET confirmed = %s WHERE id = %s',
+                  (call.data[17:].startswith('Acc'), call.data[20:]))
+        load = db.ex('SELECT expenses.id, task.object, COALESCE(employee.name, employee.handle), employee.handle , amount, note FROM expenses JOIN task ON task.id = taskid JOIN employee ON employeeid = employee.id WHERE confirmed IS NULL LIMIT 1; ')
         if not load:
             await bot.send_message(call.from_user.id, 'Неподтвержденных расходов не найдено\n/office для перехода в личный кабинет')
         else:
-            await bot.send_message(call.from_user.id, f'Поездка: {load[0][1]}\nСотрудник: {load[0][2]}\nСумма: {load[0][3]}\nЦель расхода: {load[0][4]}', reply_markup=mk.createMarkup(1, ['Подтвердить','Отклонить'],[f'adApproveExpensesAcc{load[0][0]}',f'adApproveExpensesRej{load[0][0]}']))
+            await bot.send_message(call.from_user.id, f'Поездка: {load[0][1]}\nСотрудник: {load[0][2]}\nСумма: {load[0][3]}\nЦель расхода: {load[0][4]}', reply_markup=mk.createMarkup(1, ['Подтвердить', 'Отклонить'], [f'adApproveExpensesAcc{load[0][0]}', f'adApproveExpensesRej{load[0][0]}']))
+
 
 def main():
     asyncio.run(bot.polling())

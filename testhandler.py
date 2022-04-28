@@ -20,10 +20,16 @@ month = ['январь', 'февраль', 'март', 'апрель', 'май',
          'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
 
 
+@bot.message_handler(commands=['start'])
+async def startHandler(message):
+    await bot.send_message(message.chat.id, 'Добро пожаловать!\nДля авторизации как сотрудник отправьте команду /authuser\nДля авторизации как администатор отправьте команду /authowner\nВашу заявку должен подтвердить администратор')
+
+
 @bot.message_handler(commands=['office'])
 async def messageHandler(message):
-    getRole = db.ex('SELECT role FROM employee WHERE chatid = %s',
+    getRole = db.ex('SELECT role FROM employee WHERE chatid = %s AND deleted IS NOT True',
                     (int(message.chat.id),))
+    print(getRole)
     if not getRole:
         await bot.send_message(message.chat.id, 'Такой пользователь не зарегистрирован в системе\nОбратитесь к администратору\n/authuser для авторизации')
     elif getRole[0][0] == 'owner':
@@ -39,12 +45,12 @@ async def messageHandler(message):
 async def auth(message):
     role = message.text[5:]
     currentRole = db.ex(
-        'SELECT role FROM employee WHERE id = %s', (message.chat.id,))
-    if currentRole and currentRole[0][0] == role:
+        'SELECT role, deleted  FROM employee WHERE chatid = %s', (message.chat.id,))
+    if currentRole and (currentRole[0][0] == role or currentRole[0][1]):
         await bot.send_message(message.chat.id, 'Вы уже авторизованы')
         return
     for owner in db.ex("SELECT chatid FROM employee WHERE role = 'owner'"):
-        await bot.send_message(owner[0], f'Новый запрос на авторизацию пользователя от @{message.chat.username}\nЗапрашиваемая роль: {rolemapping[role]}', reply_markup=mk.createMarkup(1, ['Авторизовать'], [f'auth//{message.chat.username}//{message.chat.id}//{role}//{owner[0]}']))
+        await bot.send_message(owner[0], f'Новый запрос на авторизацию пользователя от {message.chat.first_name if message.chat.first_name else ""} {message.chat.last_name if message.chat.last_name else ""}\n@{message.chat.username}\nЗапрашиваемая роль: {rolemapping[role]}', reply_markup=mk.createMarkup(1, ['Авторизовать'], [f'auth//{message.chat.username}//{message.chat.id}//{role}//{owner[0]}']))
     await bot.send_message(message.chat.id, 'Запрос на авторизацию успешно отправлен, ожидайте ответа администратора')
 
 
@@ -260,10 +266,10 @@ async def callbackQuery(call):
     clearUserStack(call.from_user.id)
     if call.data.startswith('auth'):
         data = call.data.split('//')
-        db.ex('INSERT INTO employee(handle, chatid, role) VALUES (%s, %s, %s) ON CONFLICT (chatid) DO UPDATE SET role = %s WHERE employee.chatid = %s',
+        db.ex('INSERT INTO employee(handle, chatid, role) VALUES (%s, %s, %s) ON CONFLICT (chatid) DO UPDATE SET role = %s, deleted = NULL WHERE employee.chatid = %s',
               (data[1], int(data[2]), data[3], data[3], int(data[2])))
         await bot.send_message(data[2], f'Ваши привилегии обновлены\nНовая роль: {rolemapping[data[3]]}\n/office для перехода в личный кабинет')
-        await bot.send_message(data[-1], 'Роль успешно обновлена')
+        await bot.edit_message_text('Роль успешно обновлена', call.from_user.id, call.message.id, reply_markup=None)
     elif call.data == "adAuto":
         autoList = await getAutoList()
         await bot.send_message(call.from_user.id, 'Список авто:\n' + autoList, reply_markup=mk.createMarkup(2, ['Добавить', 'Удалить'], ['adAutoAdd', 'adAutoDelete']))

@@ -3,14 +3,17 @@ from telebot import apihelper
 import datetime as dt
 import logging
 import asyncio
+import aiohttp
 import io
 
 import constants
 from dbhandler import dbHandler
 from markups import markup as mk
-
+baseurl = 'https://cloud-api.yandex.net/v1/disk/'
+yandexHeaders = {'Authorization': constants.DISKAPIKEY}
 bot = AsyncTeleBot(constants.APIKEY, parse_mode=None)
 db = dbHandler(constants.DBPARAMS)
+
 apihelper.SESSION_TIME_TO_LIVE = 300
 logging.basicConfig(format='[%(levelname) 5s/%(asctime)s] %(name)s: %(message)s',
                     level=logging.WARNING)
@@ -35,7 +38,7 @@ async def messageHandler(message):
     elif getRole[0][0] == 'owner':
         await bot.send_message(message.chat.id, "Личный кабинет администратора", reply_markup=mk.createMarkup(2, ['Автомобили', 'Сотрудники', 'Затраты', 'Доходы', 'Сводка', 'Выдать З/П', 'Поездки', 'Зарплата', 'Подтвердить расходы'], ['adAuto', 'adEmployee', 'adExpenses', 'adIncome', 'adPivot', 'adWage', 'adObjects', 'adLoadWage', 'adApproveExpenses']))
     elif getRole[0][0] == 'user':
-        await bot.send_message(message.chat.id, 'Личный кабинет сотрудника', reply_markup=mk.createMarkup(1, ['Отчитаться о поездке', 'Мои доходы'], ['userTask', 'userIncome0']))
+        await bot.send_message(message.chat.id, 'Личный кабинет сотрудника', reply_markup=mk.createMarkup(1, ['Отчитаться о поездке', 'Мои доходы', 'Загрузить фотоотчет'], ['userTask', 'userIncome0', 'userUploadPicture']))
     else:
         await bot.send_message(message.chat.id, 'Проблемы с ролью пользователя\nОбратитесь к администратору')
     clearUserStack(message.chat.id)
@@ -50,8 +53,14 @@ async def auth(message):
         await bot.send_message(message.chat.id, 'Вы уже авторизованы')
         return
     for owner in db.ex("SELECT chatid FROM employee WHERE role = 'owner'"):
-        await bot.send_message(owner[0], f'Новый запрос на авторизацию пользователя от {message.chat.first_name if message.chat.first_name else ""} {message.chat.last_name if message.chat.last_name else ""}\n@{message.chat.username}\nЗапрашиваемая роль: {rolemapping[role]}', reply_markup=mk.createMarkup(1, ['Авторизовать'], [f'auth//{message.chat.username}//{message.chat.id}//{role}//{owner[0]}']))
+        await bot.send_message(owner[0], f'Новый запрос на авторизацию пользователя от {message.chat.first_name if message.chat.first_name else ""} {message.chat.last_name if message.chat.last_name else ""}\n@{message.chat.username}\nЗапрашиваемая роль: {rolemapping[role]}', reply_markup=mk.createMarkup(1, ['Авторизовать'], [f'auth//{message.chat.username if message.chat.username else f"{message.chat.first_name}"}//{message.chat.id}//{role}//{owner[0]}']))
     await bot.send_message(message.chat.id, 'Запрос на авторизацию успешно отправлен, ожидайте ответа администратора')
+
+
+@bot.message_handler(content_types=['photo'])
+def photo(message):
+    if stackFilter(message, 'uploadingImage'):
+        print(dir(message))
 
 
 def stackFilter(message, term, mustbedigit=False):
@@ -332,9 +341,7 @@ async def callbackQuery(call):
         if not period:
             pivot = 'Сводка за все время:\n'
         else:
-            print(period)
             days = period.split("'")[1].split()[0]
-            print(days)
             pivot = f'Сводка за {days} {"день" if int(days) == 1 else "дней"}\n'
         pivot = pivot + \
             f"Доходы: {income}\nРасходы: {expenses}\nРасходы на З/П: {wage}\nПрибыль: {profit}"
@@ -421,10 +428,13 @@ async def callbackQuery(call):
             await bot.send_message(call.from_user.id, 'Неподтвержденных расходов не найдено\n/office для перехода в личный кабинет')
         else:
             await bot.send_message(call.from_user.id, f'Поездка: {load[0][1]}\nСотрудник: {load[0][2]}\nСумма: {load[0][3]}\nЦель расхода: {load[0][4]}', reply_markup=mk.createMarkup(1, ['Подтвердить', 'Отклонить'], [f'adApproveExpensesAcc{load[0][0]}', f'adApproveExpensesRej{load[0][0]}']))
+    elif call.data == 'userUploadPicture':
+        stack[call.from_user.id]['uploadingPicture'] = True
+        await bot.send_message(call.from_user.id, 'Отправьте фотографию для загрузки на диск администратора')
 
 
 def main():
-    asyncio.run(bot.polling())
+    asyncio.run(bot.infinity_polling())
 
 
 if __name__ == '__main__':

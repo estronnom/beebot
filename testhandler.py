@@ -1,9 +1,10 @@
 from telebot.async_telebot import AsyncTeleBot
 from telebot import apihelper
 import datetime as dt
-import logging
 import asyncio
 import aiohttp
+import json
+import requests
 import io
 
 import constants
@@ -15,8 +16,6 @@ bot = AsyncTeleBot(constants.APIKEY, parse_mode=None)
 db = dbHandler(constants.DBPARAMS)
 
 apihelper.SESSION_TIME_TO_LIVE = 300
-logging.basicConfig(format='[%(levelname) 5s/%(asctime)s] %(name)s: %(message)s',
-                    level=logging.WARNING)
 stack = {}
 rolemapping = {'user': 'пользователь', 'owner': 'владелец'}
 month = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
@@ -32,7 +31,6 @@ async def startHandler(message):
 async def messageHandler(message):
     getRole = db.ex('SELECT role FROM employee WHERE chatid = %s AND deleted IS NOT True',
                     (int(message.chat.id),))
-    print(getRole)
     if not getRole:
         await bot.send_message(message.chat.id, 'Такой пользователь не зарегистрирован в системе\nОбратитесь к администратору\n/authuser для авторизации')
     elif getRole[0][0] == 'owner':
@@ -57,11 +55,66 @@ async def auth(message):
     await bot.send_message(message.chat.id, 'Запрос на авторизацию успешно отправлен, ожидайте ответа администратора')
 
 
-@bot.message_handler(content_types=['photo'])
-def photo(message):
-    if stackFilter(message, 'uploadingImage'):
-        print(dir(message))
+async def uploadPicture(file, name):
+    print('got in picture uploader')
+    async with aiohttp.ClientSession(headers=yandexHeaders) as session:
+        addurl = f"resources/upload?path=%2FSapov%2F{str(dt.datetime.now())[:19].replace(':','-')} {name}"
+        async with session.get(baseurl+addurl) as response:
+            if response.status != 200:
+                print('Unable to get loading link')
+                return
+            r = await response.read()
+            r = json.loads(r)
+            async with session.put(r['href'], data=file) as response:
+                return response.status
 
+'''
+async def uploadPicture(message, name):
+    print('got in picture uploader')
+    file = await bot.get_file(message.photo[-1].file_id)
+    file = await bot.download_file(file.file_path)
+    addurl = f"resources/upload?path=%2FSapov%2F{str(dt.datetime.now())[:19].replace(':','-')} {name}"
+    r = requests.get(baseurl+addurl, headers=yandexHeaders)
+    r = json.loads(r.text)
+    print(r['href'])
+    files = {'file': file}
+    r = requests.put(r['href'], headers=yandexHeaders, files=files)
+'''
+
+'''@bot.message_handler(content_types=['photo'])
+async def photoHandler(message):
+    print('got in picture uploader')
+    file = await bot.get_file(message.photo[-1].file_id)
+    file = await bot.download_file(file.file_path)
+    addurl = f"resources/upload?path=%2FSapov%2F{str(dt.datetime.now())[:19].replace(':','-')} {message.chat.first_name}"
+    r = requests.get(baseurl+addurl, headers=yandexHeaders)
+    r = json.loads(r.text)
+    print(r['href'])
+    files = {'file': file}
+    r = requests.put(r['href'], headers=yandexHeaders, files=files)'''
+
+'''async def getPictureLink(file, name):
+    print('got in picture uploader')
+    async with aiohttp.ClientSession(headers=yandexHeaders) as yandisksession:
+        addurl = f"resources/upload?path=%2FSapov%2F{str(dt.datetime.now())[:19].replace(':','-')} {name}"
+        async with yandisksession.get(baseurl+addurl) as response:
+            if response.status != 200:
+                print('Unable to get loading link')
+                return
+            r = await response.read()
+            print(r)
+            r = json.loads(r)
+            async with session.put(r['href'], data=file) as response:
+                return response.status
+            '''
+
+@bot.message_handler(content_types=['photo'])
+async def photoHandler(message):
+    print('got in photo handler')
+    file = await bot.get_file(message.photo[-1].file_id)
+    file = await bot.download_file(file.file_path)
+    task = asyncio.create_task(uploadPicture(file, message.chat.first_name))
+    
 
 def stackFilter(message, term, mustbedigit=False):
     if mustbedigit and not message.text.isdigit:
@@ -272,6 +325,7 @@ async def deletingEmployee(message):
 
 @bot.callback_query_handler(func=lambda call: True)
 async def callbackQuery(call):
+    print('got a callback')
     clearUserStack(call.from_user.id)
     if call.data.startswith('auth'):
         data = call.data.split('//')
@@ -434,7 +488,8 @@ async def callbackQuery(call):
 
 
 def main():
-    asyncio.run(bot.infinity_polling())
+    print('polling!')
+    asyncio.run(bot.infinity_polling(timeout=30, request_timeout=30, skip_pending=True))
 
 
 if __name__ == '__main__':

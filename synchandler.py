@@ -210,9 +210,14 @@ def createTask(message):
                 data = []
                 for ind in message.text.split():
                     ind = int(ind)
-                    if not db.ex('SELECT * FROM employee WHERE id = %s', (ind,)):
+                    chatid = db.ex('SELECT chatid FROM employee WHERE id = %s', (ind,))
+                    if not chatid:
                         bot.send_message(
                             message.chat.id, f'Сотрудник с id {ind} не найден в базе, отправьте сообщение еще раз')
+                        return
+                    elif int(chatid[0][0]) == message.chat.id:
+                        bot.send_message(
+                            message.chat.id, f'Вы не можете указать в качестве напарника самого себя!')
                         return
                     else:
                         data.append(ind)

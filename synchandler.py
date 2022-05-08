@@ -13,11 +13,16 @@ baseurl = 'https://cloud-api.yandex.net/v1/disk/'
 yandexHeaders = {'Authorization': constants.DISKAPIKEY}
 bot = TeleBot(constants.APIKEY, parse_mode=None)
 db = dbHandler(constants.DBPARAMS)
+logging.basicConfig(filename='beebot.log', encoding='utf-8', level=logging.INFO,
+                    format='%(levelname)s:%(asctime)s %(message)s')
 stack = {}
 rolemapping = {'user': 'пользователь', 'owner': 'владелец'}
 month = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
          'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
 
+
+# TODO: сделать логгирование, сделать моментальный эдит сообщений, настроить нормальное отображение списка
+#  сотрдуников(добавить роль), настроить верное отображение обновления привилегий
 
 def stackFilter(message, term, mustbedigit=False):
     if mustbedigit and not message.text.isdigit:
@@ -129,6 +134,7 @@ def uploadPicture(file, message):
 
 @bot.message_handler(content_types=['photo'])
 def photoHandler(message):
+    logging.info(f'User: {message.chat.first_name} got into photoHandler')
     getRole = db.ex('SELECT role FROM employee WHERE chatid = %s AND deleted IS NOT True',
                     (int(message.chat.id),))
     if not getRole or (getRole and getRole[0][0] != 'user'):
@@ -150,9 +156,10 @@ def startHandler(message):
 
 
 @bot.message_handler(commands=['office'])
-def messageHandler(message):
+def officeHandler(message):
     getRole = db.ex('SELECT role FROM employee WHERE chatid = %s AND deleted IS NOT True',
                     (int(message.chat.id),))
+    logging.info(f'{message.chat.first_name} got into officeHandler: getRole is {getRole}')
     if not getRole:
         bot.send_message(
             message.chat.id,
@@ -195,6 +202,7 @@ def auth(message):
     role = message.text[5:]
     currentRole = db.ex(
         'SELECT role, deleted  FROM employee WHERE chatid = %s', (message.chat.id,))
+    logging.info(f'{message.chat.first_name} got into authHandler using {message.text}: current role is {currentRole}')
     if currentRole and (currentRole[0][0] == role or currentRole[0][1]):
         bot.send_message(message.chat.id, 'Вы уже авторизованы')
         return
@@ -218,6 +226,7 @@ def createTask(message):
             stack[message.chat.id]['taskObject'] = objectNameGot
         except ValueError:
             stack[message.chat.id]['taskObject'] = message.text
+        logging.info(f"createTask:{message.chat.first_name}:{message.text}:{stack[message.chat.id]['taskObject']}")
         carList = getAutoList()
         bot.send_message(
             message.chat.id,
@@ -240,6 +249,7 @@ def createTask(message):
         except ValueError:
             bot.send_message(
                 message.chat.id, 'Число введено некорректно, попробуйте еще раз')
+        logging.info(f"createTask:{message.chat.first_name}:{message.text}:{stack[message.chat.id]['taskCar']}")
     elif not stack[message.chat.id]['taskBuddy']:
         if message.text == '/skip':
             stack[message.chat.id]['taskBuddy'] = 'flagSkipped'
@@ -269,20 +279,26 @@ def createTask(message):
             print(data)
             bot.send_message(
                 message.chat.id, 'Супер, теперь введите количество километров, затраченных на поездку')
+        logging.info(f"createTask:{message.chat.first_name}:{message.text}:{stack[message.chat.id]['taskBuddy']}")
     elif not stack[message.chat.id]['taskKm']:
         insertDigit(message, 'taskKm',
                     'Отлично, теперь введите количество часов, которое заняла поездка', int)
+        logging.info(f"createTask:{message.chat.first_name}:{message.text}:{stack[message.chat.id]['taskKm']}")
     elif not stack[message.chat.id]['taskTime']:
         insertDigit(message, 'taskTime',
                     'Теперь введите сумму, полученную за заказ', int)
+        logging.info(f"createTask:{message.chat.first_name}:{message.text}:{stack[message.chat.id]['taskTime']}")
     elif not stack[message.chat.id]['taskIncome']:
         insertDigit(message, 'taskIncome',
                     'Теперь нужно отчитаться о связанных с поездкой расходах\nКаждую статью расходов нужно описать '
                     'отдельным сообщением в следующей форме: \n\n1500 на бензин\n300 на мобильную связь\n\nКогда вы '
                     'укажете все расходы(или если они отсутствуют), отправьте команду /skip',
                     float)
+        logging.info(f"createTask:{message.chat.first_name}:{message.text}:{stack[message.chat.id]['taskIncome']}")
     elif not stack[message.chat.id]['taskExpensesFinished']:
         if message.text == '/skip':
+            logging.info(
+                f"createTask:{message.chat.first_name}:{message.text}:{stack[message.chat.id]['taskExpenses']}")
             stack[message.chat.id]['taskExpensesFinished'] = True
             idTask = db.ex(
                 'INSERT INTO task(object, car, kmspent, hoursspent, income, time) VALUES (%s, %s, %s, %s, %s, '
@@ -304,6 +320,7 @@ def createTask(message):
                 for expense in stack[message.chat.id]['taskExpenses']:
                     db.ex('INSERT INTO expenses(taskid, employeeid, amount, note) VALUES (%s, %s, %s, %s)',
                           (idTask, idTaskMaker, expense[0], expense[1]))
+            logging.ingo(f"createTask:{message.chat.first_name}:Task created")
             bot.send_message(
                 message.chat.id, 'Готово! Отчет успешно внесен в базу\n/office для перехода в личный кабинет')
             clearUserStack(message.chat.id)
@@ -327,6 +344,7 @@ def createTask(message):
 
 @bot.message_handler(func=lambda message: stackFilter(message, 'addingAuto'))
 def addingAuto(message):
+    logging.info(f'addingAuto:{message.chat.first_name}:{message.text}')
     if not stack[message.chat.id]['addingAutoName']:
         stack[message.chat.id]['addingAutoName'] = message.text
         bot.send_message(message.chat.id, 'Теперь введите цвет машины')
@@ -342,7 +360,8 @@ def addingAuto(message):
 
 
 @bot.message_handler(func=lambda message: stackFilter(message, 'deletingAuto', mustbedigit=True))
-def autoDeleter(message):
+def deletingAuto(message):
+    logging.info(f'deletingAuto:{message.chat.first_name}:{message.text}')
     db.ex('UPDATE auto SET deleted = True WHERE id = %s',
           param=(int(message.text),))
     bot.send_message(message.chat.id, f'Машина {message.text} удалена из базы', reply_markup=mk.createMarkup(
@@ -351,6 +370,7 @@ def autoDeleter(message):
 
 @bot.message_handler(func=lambda message: stackFilter(message, 'updateEmployee'))
 def addingEmployee(message):
+    logging.info(f"addingExepnse:{message.chat.first_name}:{message.text}:{stack[message.chat.id]['updateEmployeeId']}")
     if not stack[message.chat.id]['updateEmployeeId']:
         insertDigit(message, 'updateEmployeeId',
                     'Теперь введите имя для сотрудника', int)
@@ -375,6 +395,7 @@ def addingEmployee(message):
 
 @bot.message_handler(func=lambda message: stackFilter(message, 'deletingEmployee', mustbedigit=True))
 def deletingEmployee(message):
+    logging.info(f'deletingEmployee:{message.chat.first_name}:{message.text}')
     db.ex('UPDATE employee SET deleted = True WHERE id = %s', param=(message.text,))
     bot.send_message(message.chat.id, f'Сотрудник {message.text} удален из базы', reply_markup=mk.createMarkup(
         2, ['Удалить еще', 'Закончить'], ['adEmployeeDelete', 'endEmployeeDelete']))
@@ -382,6 +403,7 @@ def deletingEmployee(message):
 
 @bot.message_handler(func=lambda message: stackFilter(message, 'userAddExpense'))
 def addingExpense(message):
+    logging.info(f'addingExepnse:{message.chat.first_name}:{message.text}')
     try:
         data = message.text.split()
         amount = int(data[0])
@@ -409,7 +431,7 @@ def addingExpense(message):
 
 @bot.callback_query_handler(func=lambda call: True)
 def callbackQuery(call):
-    print('got a callback', call.data, str(dt.datetime.now()))
+    logging.info(f'callBack {call.data}:{call.from_user.first_name}')
     clearUserStack(call.from_user.id)
     if call.data.startswith('auth'):
         data = call.data.split('//')
@@ -634,7 +656,7 @@ def callbackQuery(call):
 
 
 def main():
-    print('polling!')
+    logging.info('Polling started')
     bot.infinity_polling()
 
 

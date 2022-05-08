@@ -21,7 +21,7 @@ month = ['январь', 'февраль', 'март', 'апрель', 'май',
          'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
 
 
-# TODO: сделать логгирование, сделать моментальный эдит сообщений, настроить нормальное отображение списка
+# TODO: сделать моментальный эдит сообщений, настроить нормальное отображение списка
 #  сотрдуников(добавить роль), настроить верное отображение обновления привилегий
 
 def stackFilter(message, term, mustbedigit=False):
@@ -54,17 +54,16 @@ def csvCreator(headers, array):
 def csvLoadSender(idUser, expense, callData):
     if expense:
         period = periodHandler(callData, 12, 'AND', 'task')
-        load = db.ex(
-            "SELECT date_trunc('minute', expenses.time), COALESCE(task.object, 'Расход без объекта'), COALESCE("
-            "employee.name, employee.handle), amount, note FROM expenses LEFT JOIN task ON taskid = task.id JOIN "
-            "employee ON employeeid = employee.id WHERE confirmed = True" + period)
+        load = db.ex("SELECT date_trunc('minute', expenses.time), COALESCE(task.object, 'Расход без объекта'), "
+                     "COALESCE(employee.name, employee.handle), amount, note FROM expenses LEFT JOIN task ON taskid = "
+                     f"task.id JOIN employee ON employeeid = employee.id WHERE confirmed = True {period}")
         headers = 'Время;Объект;Сотрудник;Сумма;Заметка\n'
     else:
         period = periodHandler(callData, 10, 'AND', 'task')
         load = db.ex(
-            "SELECT date_trunc('minute', time), task.object, COALESCE(employee.name, employee.handle), income FROM "
-            "employeetotask JOIN employee ON employeeid = employee.id JOIN task ON taskid = task.id WHERE main = "
-            "true" + period)
+            "SELECT date_trunc('minute', time), task.object, COALESCE(employee.name, employee.handle), income FROM"
+            "employeetotask JOIN employee ON employeeid = employee.id JOIN task ON taskid = task.id WHERE main ="
+            "True" + period)
         headers = 'Время;Объект;Сотрудник;Сумма\n'
     if not load:
         bot.send_message(idUser, 'Записей за данный период не найдено')
@@ -104,7 +103,7 @@ def getAutoList():
 
 def getEmployees(coeff):
     employeeList = db.ex(
-        f'SELECT id, name{", coeff, wage" if coeff else ""} FROM employee WHERE deleted IS NOT TRUE AND name IS NOT NULL ORDER BY id')
+        f"SELECT id, name {', coeff, wage' if coeff else ''} coeff, wage FROM employee WHERE deleted IS NOT TRUE AND name IS NOT NULL ORDER BY 1")
     if employeeList:
         employeeList = '\n'.join(
             [' '.join([str(obj) for obj in item]) for item in employeeList])
@@ -443,7 +442,9 @@ def callbackQuery(call):
             data[2],
             f'Ваши привилегии обновлены\nНовая роль: {rolemapping[data[3]]}\n/office для перехода в личный кабинет')
         bot.edit_message_text(
-            'Роль успешно обновлена', call.from_user.id, call.message.id, reply_markup=None)
+            f'Роль пользователя {data[1]} успешно обновлена\nНовая роль{rolemapping[data[3]]}', call.from_user.id,
+            call.message.id,
+            reply_markup=None)
     elif call.data == "adAuto":
         autoList = getAutoList()
         bot.send_message(call.from_user.id, 'Список авто:\n' + autoList,
@@ -508,16 +509,17 @@ def callbackQuery(call):
             ['loadPivot1', 'loadPivot7', 'loadPivot30', 'loadPivotAll']))
     elif call.data.startswith('loadPivot'):
         period = periodHandler(call.data, 9, 'WHERE', 'task')
-        income = db.ex('SELECT sum(income) FROM task' + period)
+        income = db.ex('SELECT sum(income) FROM task ' + period)
         income = coalesce(income)
         period = periodHandler(call.data, 9, 'AND', 'expenses')
         expenses = db.ex(
-            'SELECT sum(amount) FROM expenses WHERE confirmed = True' + period)
+            f"SELECT sum(amount) FROM expenses WHERE confirmed = True {period}")
         expenses = coalesce(expenses)
         period = periodHandler(call.data, 9, 'WHERE', 'payments')
         wage = db.ex(
-            'SELECT sum(payments.amount) FROM payments JOIN employeetotask ON employeetotaskid = employeetotask.id '
-            'JOIN task ON taskid = task.id' + period)
+            "SELECT sum(payments.amount) FROM payments JOIN employeetotask e on payments.employeetotaskid = e.id"
+            f" JOIN task on taskid = task.id {period}"
+        )
         wage = coalesce(wage)
         profit = income - expenses - wage
         if not period:
@@ -629,7 +631,10 @@ def callbackQuery(call):
         else:
             period = periodHandler(call.data, 10, 'WHERE', 'payments')
             load = db.ex(
-                f'SELECT COALESCE(employee.name, employee.handle), sum(amount) FROM payments JOIN employeetotask ON employeetotask.id = employeetotaskid JOIN employee ON employeeid = employee.id {period} GROUP BY employee.handle')
+                "SELECT employee.handle, sum(amount) FROM payments JOIN employeetotask ON employeetotask.id = "
+                "employeetotaskid JOIN employee "
+                "ON employeeid = employee.id GROUP BY employee.handle"
+                f"{period}")
             if not load:
                 bot.send_message(call.from_user.id,
                                  'Выплат за данный период не найдено')

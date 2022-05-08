@@ -50,12 +50,16 @@ def csvLoadSender(idUser, expense, callData):
     if expense:
         period = periodHandler(callData, 12, 'AND', 'task')
         load = db.ex(
-            "SELECT date_trunc('minute', expenses.time), COALESCE(task.object, 'Расход без объекта'), COALESCE(employee.name, employee.handle), amount, note FROM expenses LEFT JOIN task ON taskid = task.id JOIN employee ON employeeid = employee.id WHERE confirmed = True" + period)
+            "SELECT date_trunc('minute', expenses.time), COALESCE(task.object, 'Расход без объекта'), COALESCE("
+            "employee.name, employee.handle), amount, note FROM expenses LEFT JOIN task ON taskid = task.id JOIN "
+            "employee ON employeeid = employee.id WHERE confirmed = True" + period)
         headers = 'Время;Объект;Сотрудник;Сумма;Заметка\n'
     else:
         period = periodHandler(callData, 10, 'AND', 'task')
         load = db.ex(
-            "SELECT date_trunc('minute', time), task.object, COALESCE(employee.name, employee.handle), income FROM employeetotask JOIN employee ON employeeid = employee.id JOIN task ON taskid = task.id WHERE main = true" + period)
+            "SELECT date_trunc('minute', time), task.object, COALESCE(employee.name, employee.handle), income FROM "
+            "employeetotask JOIN employee ON employeeid = employee.id JOIN task ON taskid = task.id WHERE main = "
+            "true" + period)
         headers = 'Время;Объект;Сотрудник;Сумма\n'
     if not load:
         bot.send_message(idUser, 'Записей за данный период не найдено')
@@ -141,7 +145,8 @@ def photoHandler(message):
 @bot.message_handler(commands=['start'])
 def startHandler(message):
     bot.send_message(message.chat.id,
-                     'Добро пожаловать!\nДля авторизации как сотрудник отправьте команду /authuser\nДля авторизации как администатор отправьте команду /authowner\nВашу заявку должен подтвердить администратор')
+                     'Добро пожаловать!\nДля авторизации как сотрудник отправьте команду /authuser\nДля авторизации '
+                     'как администатор отправьте команду /authowner\nВашу заявку должен подтвердить администратор')
 
 
 @bot.message_handler(commands=['office'])
@@ -228,7 +233,10 @@ def createTask(message):
                 employeeList = getEmployees(coeff=False)
                 bot.send_message(
                     message.chat.id,
-                    'Отлично, теперь введите номера напарников, с которым вы выполняли задачу\nЕсли вы выполняли ее самостоятельно, то отправьте слово /skip\n\n' + employeeList + f'\n\nомера напарников нужно вводить одним сообщением через пробел:\n2 4 16 17 9')
+                    'Отлично, теперь введите номера напарников, с которым вы выполняли задачу\nЕсли вы выполняли ее '
+                    'самостоятельно, то отправьте слово /skip\n\n' + employeeList + f'\n\nомера напарников нужно '
+                                                                                    f'вводить одним сообщением через '
+                                                                                    f'пробел:\n2 4 16 17 9')
         except ValueError:
             bot.send_message(
                 message.chat.id, 'Число введено некорректно, попробуйте еще раз')
@@ -269,13 +277,16 @@ def createTask(message):
                     'Теперь введите сумму, полученную за заказ', int)
     elif not stack[message.chat.id]['taskIncome']:
         insertDigit(message, 'taskIncome',
-                    'Теперь нужно отчитаться о связанных с поездкой расходах\nКаждую статью расходов нужно описать отдельным сообщением в следующей форме: \n\n1500 на бензин\n300 на мобильную связь\n\nКогда вы укажете все расходы(или если они отсутствуют), отправьте команду /skip',
+                    'Теперь нужно отчитаться о связанных с поездкой расходах\nКаждую статью расходов нужно описать '
+                    'отдельным сообщением в следующей форме: \n\n1500 на бензин\n300 на мобильную связь\n\nКогда вы '
+                    'укажете все расходы(или если они отсутствуют), отправьте команду /skip',
                     float)
     elif not stack[message.chat.id]['taskExpensesFinished']:
         if message.text == '/skip':
             stack[message.chat.id]['taskExpensesFinished'] = True
             idTask = db.ex(
-                'INSERT INTO task(object, car, kmspent, hoursspent, income, time) VALUES (%s, %s, %s, %s, %s, NOW()) RETURNING *',
+                'INSERT INTO task(object, car, kmspent, hoursspent, income, time) VALUES (%s, %s, %s, %s, %s, '
+                'NOW()) RETURNING *',
                 (stack[message.chat.id]['taskObject'], stack[message.chat.id]['taskCar'],
                  stack[message.chat.id]['taskKm'], stack[message.chat.id]['taskTime'],
                  stack[message.chat.id]['taskIncome']))[0][0]
@@ -286,7 +297,8 @@ def createTask(message):
             if stack[message.chat.id]['taskBuddy'] != 'flagSkipped':
                 for id in stack[message.chat.id]['taskBuddy']:
                     db.ex(
-                        'INSERT INTO employeetotask(employeeid, taskid, main) VALUES (%s, %s, False) ON CONFLICT DO NOTHING',
+                        'INSERT INTO employeetotask(employeeid, taskid, main) VALUES (%s, %s, False) ON CONFLICT DO '
+                        'NOTHING',
                         (id, idTask))
             if stack[message.chat.id]['taskExpenses']:
                 for expense in stack[message.chat.id]['taskExpenses']:
@@ -377,14 +389,17 @@ def addingExpense(message):
         if not caption:
             raise IndexError
         db.ex(
-            'INSERT INTO expenses(employeeid, amount, note) VALUES ((SELECT id FROM employee WHERE chatid = %s), %s, %s)',
+            'INSERT INTO expenses(employeeid, amount, note) VALUES ((SELECT id FROM employee WHERE chatid = %s), %s, '
+            '%s)',
             (message.chat.id, amount, caption))
     except ValueError:
         bot.send_message(message.chat.id,
-                         'Сумма расхода введена в неверном формате, попробуйте еще раз\nШаблон отчета о расходах: \n1500 на бензин\n300 на мобильную связь')
+                         'Сумма расхода введена в неверном формате, попробуйте еще раз\nШаблон отчета о расходах: '
+                         '\n1500 на бензин\n300 на мобильную связь')
     except IndexError:
         bot.send_message(message.chat.id,
-                         'Назначение расхода введено неверно, попробуйте еще раз\nШаблон отчета о расходах: \n1500 на бензин\n300 на мобильную связь')
+                         'Назначение расхода введено неверно, попробуйте еще раз\nШаблон отчета о расходах: \n1500 на '
+                         'бензин\n300 на мобильную связь')
     else:
         stack[message.chat.id]['userAddExpense'] = False
         bot.send_message(message.chat.id, 'Расход успешно учтен',
@@ -399,7 +414,8 @@ def callbackQuery(call):
     if call.data.startswith('auth'):
         data = call.data.split('//')
         db.ex(
-            'INSERT INTO employee(handle, chatid, role) VALUES (%s, %s, %s) ON CONFLICT (chatid) DO UPDATE SET role = %s, deleted = NULL WHERE employee.chatid = %s',
+            'INSERT INTO employee(handle, chatid, role) VALUES (%s, %s, %s) ON CONFLICT (chatid) DO UPDATE SET role = '
+            '%s, deleted = NULL WHERE employee.chatid = %s',
             (data[1], int(data[2]), data[3], data[3], int(data[2])))
         bot.send_message(
             data[2],
@@ -508,7 +524,9 @@ def callbackQuery(call):
                 db.ex(
                     'UPDATE employeetotask SET paid = false WHERE id = %s', (data[1],))
         load = db.ex(
-            'SELECT COALESCE(name, handle), object, hoursspent, hoursspent * wage * coeff, employeetotask.id AS sum FROM employeetotask JOIN employee ON employeeid = employee.id JOIN task ON taskid = task.id WHERE paid IS NULL AND wage IS NOT NULL LIMIT 1;')
+            'SELECT COALESCE(name, handle), object, hoursspent, hoursspent * wage * coeff, employeetotask.id AS sum '
+            'FROM employeetotask JOIN employee ON employeeid = employee.id JOIN task ON taskid = task.id WHERE paid '
+            'IS NULL AND wage IS NOT NULL LIMIT 1;')
         if load:
             employeeToTaskId = load[0][4]
             amount = load[0][3]
@@ -537,7 +555,8 @@ def callbackQuery(call):
         else:
             lastObject = '\n'.join(
                 [' '.join([str(obj) for obj in item]) for item in lastObject])
-            queryText = 'Заполняем задачу\nВведите название нового объекта или пришлите номер одного из представленных:\n\n' + lastObject
+            queryText = 'Заполняем задачу\nВведите название нового объекта или пришлите номер одного из ' \
+                        'представленных:\n\n' + lastObject
         bot.send_message(call.from_user.id, queryText)
     elif call.data.startswith('userIncome'):
         period = int(call.data[10:])
@@ -560,7 +579,8 @@ def callbackQuery(call):
     elif call.data == 'userAddExpense':
         bot.send_message(
             call.from_user.id,
-            'Каждую статью расходов нужно описать отдельным сообщением в следующей форме:\nсумма расхода+пробел+назначение расхода \n\n1500 на бензин\n300 на мобильную связь')
+            'Каждую статью расходов нужно описать отдельным сообщением в следующей форме:\nсумма '
+            'расхода+пробел+назначение расхода \n\n1500 на бензин\n300 на мобильную связь')
         stack[call.from_user.id]['userAddExpense'] = True
     elif call.data == "userAddExpenseEnd":
         stack[call.from_user.id]['userAddExpense'] = False
@@ -568,7 +588,11 @@ def callbackQuery(call):
             call.from_user.id, 'Внесение расходов завершено\n/office для входа в личный кабинет')
     elif call.data == 'adObjects':
         load = db.ex(
-            "SELECT task.id, date_trunc('minutes', time), object, (SELECT name FROM employeetotask JOIN employee ON employeeid = employee.id WHERE task.id = taskid AND main = true), (SELECT name FROM employeetotask JOIN employee ON employeeid = employee.id WHERE task.id = taskid AND main = false), auto.name, kmspent, hoursspent, income, (SELECT sum(amount) FROM expenses WHERE taskid = task.id AND confirmed = True) FROM task JOIN auto ON task.car = auto.id;")
+            "SELECT task.id, date_trunc('minutes', time), object, (SELECT name FROM employeetotask JOIN employee ON "
+            "employeeid = employee.id WHERE task.id = taskid AND main = true), (SELECT name FROM employeetotask JOIN "
+            "employee ON employeeid = employee.id WHERE task.id = taskid AND main = false), auto.name, kmspent, "
+            "hoursspent, income, (SELECT sum(amount) FROM expenses WHERE taskid = task.id AND confirmed = True) FROM "
+            "task JOIN auto ON task.car = auto.id;")
         if not load:
             bot.send_message(call.from_user.id, 'Поездок не найдено')
         else:
@@ -595,7 +619,9 @@ def callbackQuery(call):
             db.ex('UPDATE expenses SET confirmed = %s WHERE id = %s',
                   (call.data[17:].startswith('Acc'), call.data[20:]))
         load = db.ex(
-            "SELECT expenses.id, COALESCE(task.object, 'Расход без объекта'), COALESCE(employee.name, employee.handle), amount, note, date_trunc('minute', expenses.time) FROM expenses LEFT JOIN task ON task.id = taskid JOIN employee ON employeeid = employee.id WHERE confirmed IS NULL LIMIT 1; ")
+            "SELECT expenses.id, COALESCE(task.object, 'Расход без объекта'), COALESCE(employee.name, "
+            "employee.handle), amount, note, date_trunc('minute', expenses.time) FROM expenses LEFT JOIN task ON "
+            "task.id = taskid JOIN employee ON employeeid = employee.id WHERE confirmed IS NULL LIMIT 1; ")
         if not load:
             bot.send_message(
                 call.from_user.id, 'Неподтвержденных расходов не найдено\n/office для перехода в личный кабинет')

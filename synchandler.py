@@ -285,7 +285,7 @@ def createTask(message):
                 message.chat.id, 'Супер, теперь введите количество километров, затраченных на поездку')
         logging.info(f"createTask:{message.chat.first_name}:{message.text}:{stack[message.chat.id]['taskBuddy']}")
     elif not stack[message.chat.id]['taskKm']:
-        insertDigit(smessage, 'taskKm',
+        insertDigit(message, 'taskKm',
                     'Отлично, теперь введите количество часов, которое заняла поездка', int)
         logging.info(f"createTask:{message.chat.first_name}:{message.text}:{stack[message.chat.id]['taskKm']}")
     elif not stack[message.chat.id]['taskTime']:

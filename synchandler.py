@@ -21,8 +21,7 @@ month = ['январь', 'февраль', 'март', 'апрель', 'май',
          'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
 
 
-# TODO: сделать моментальный эдит сообщений, настроить нормальное отображение списка
-#  сотрдуников(добавить роль), настроить верное отображение обновления привилегий
+# TODO: настроить нормальное отображение списка сотрдуников(добавить роль)
 
 def stackFilter(message, term, mustbedigit=False):
     if mustbedigit and not message.text.isdigit:
@@ -85,8 +84,9 @@ def insertDigit(message, direction, note, func):
 
 def coalesce(array):
     try:
-        return int(array[0][0])
-    except:
+        digit = int(array[0][0])
+        return digit
+    except (IndexError, TypeError, ValueError):
         return 0
 
 
@@ -103,7 +103,8 @@ def getAutoList():
 
 def getEmployees(coeff):
     employeeList = db.ex(
-        f"SELECT id, name {', coeff, wage' if coeff else ''} coeff, wage FROM employee WHERE deleted IS NOT TRUE AND name IS NOT NULL ORDER BY 1")
+        f"SELECT id, name {', coeff, wage' if coeff else ''} coeff, wage FROM employee WHERE deleted IS NOT TRUE "
+        f"AND name IS NOT NULL ORDER BY 1")
     if employeeList:
         employeeList = '\n'.join(
             [' '.join([str(obj) for obj in item]) for item in employeeList])
@@ -121,7 +122,8 @@ def getEmployees(coeff):
 
 
 def uploadPicture(file, message):
-    addurl = f"resources/upload?path={constants.DISKFOLDER}{str(dt.datetime.now())[:21].replace(':', '-')} {message.chat.first_name}"
+    addurl = f"resources/upload?path={constants.DISKFOLDER}{str(dt.datetime.now())[:21].replace(':', '-')} " \
+             f"{message.chat.first_name}"
     r = requests.get(baseurl + addurl, headers=yandexHeaders)
     if r.status_code != 200:
         return False
@@ -207,7 +209,10 @@ def auth(message):
         return
     for owner in db.ex("SELECT chatid FROM employee WHERE role = 'owner'"):
         bot.send_message(owner[0],
-                         f'Новый запрос на авторизацию пользователя от {message.chat.first_name if message.chat.first_name else ""} {message.chat.last_name if message.chat.last_name else ""}\n@{message.chat.username}\nЗапрашиваемая роль: {rolemapping[role]}',
+                         f'Новый запрос на авторизацию пользователя от '
+                         f'{message.chat.first_name if message.chat.first_name else ""} '
+                         f'{message.chat.last_name if message.chat.last_name else ""}\n@'
+                         f'{message.chat.username}\nЗапрашиваемая роль: {rolemapping[role]}',
                          reply_markup=mk.createMarkup(
                              1, ['Авторизовать'], [
                                  f'auth//{message.chat.username if message.chat.username else f"{message.chat.first_name}"}//{message.chat.id}//{role}//{owner[0]}']))
@@ -255,8 +260,8 @@ def createTask(message):
             bot.send_message(
                 message.chat.id, 'Супер, теперь введите количество километров, затраченных на поездку')
         else:
+            data = []
             try:
-                data = []
                 for ind in message.text.split():
                     ind = int(ind)
                     chatid = db.ex('SELECT chatid FROM employee WHERE id = %s', (ind,))
@@ -319,7 +324,7 @@ def createTask(message):
                 for expense in stack[message.chat.id]['taskExpenses']:
                     db.ex('INSERT INTO expenses(taskid, employeeid, amount, note) VALUES (%s, %s, %s, %s)',
                           (idTask, idTaskMaker, expense[0], expense[1]))
-            logging.ingo(f"createTask:{message.chat.first_name}:Task created")
+            logging.info(f"createTask:{message.chat.first_name}:Task created")
             bot.send_message(
                 message.chat.id, 'Готово! Отчет успешно внесен в базу\n/office для перехода в личный кабинет')
             clearUserStack(message.chat.id)
@@ -430,7 +435,7 @@ def addingExpense(message):
 
 @bot.callback_query_handler(func=lambda call: True)
 def callbackQuery(call):
-    logging.info(f'callBack {call.data}:{call.from_user.first_name}')
+    logging.info(f'callback {call.data}:{call.from_user.first_name}')
     clearUserStack(call.from_user.id)
     if call.data.startswith('auth'):
         data = call.data.split('//')
@@ -447,21 +452,21 @@ def callbackQuery(call):
             reply_markup=None)
     elif call.data == "adAuto":
         autoList = getAutoList()
-        bot.send_message(call.from_user.id, 'Список авто:\n' + autoList,
-                         reply_markup=mk.createMarkup(2, ['Добавить', 'Удалить'], ['adAutoAdd', 'adAutoDelete']))
+        bot.edit_message_text('Список авто:\n' + autoList, call.from_user.id, call.message.id,
+                              reply_markup=mk.createMarkup(2, ['Добавить', 'Удалить'], ['adAutoAdd', 'adAutoDelete']))
     elif call.data == "adAutoAdd":
         stack[call.from_user.id]['addingAuto'] = True
         stack[call.from_user.id]['addingAutoName'] = None
         stack[call.from_user.id]['addingAutoColor'] = None
-        bot.send_message(
-            call.from_user.id, 'Добавляем автомобиль в базу\nВведите название автомобиля')
+        bot.edit_message_text('Добавляем автомобиль в базу\nВведите название автомобиля', call.from_user.id,
+                              call.message.id)
     elif call.data == "endAutoAdd":
         stack[call.from_user.id]['addingAuto'] = False
         bot.send_message(
             call.from_user.id, 'Добавление закончено\n/office для входа в личный кабинет')
     elif call.data == "adAutoDelete":
-        bot.send_message(
-            call.from_user.id, 'Введите номер автомобиля, который желаете удалить из базы')
+        bot.edit_message_text('Введите номер автомобиля, который желаете удалить из базы', call.from_user.id,
+                              call.message.id)
         stack[call.from_user.id]['deletingAuto'] = True
     elif call.data == "endAutoDelete":
         stack[call.from_user.id]['deletingAuto'] = False
@@ -469,11 +474,13 @@ def callbackQuery(call):
             call.from_user.id, 'Удаление автомобилей закончено\n/office для входа в личный кабинет')
     elif call.data == "adEmployee":
         employeeList = getEmployees(coeff=True)
-        bot.send_message(call.from_user.id, 'Список сотрудников:\n' + employeeList, reply_markup=mk.createMarkup(
-            1, ['Обновить информацию', 'Удалить'], ['adEmployeeUpdate', 'adEmployeeDelete']))
+        bot.edit_message_text('Список сотрудников:\n' + employeeList, call.from_user.id, call.message.id,
+                              reply_markup=mk.createMarkup(1, ['Обновить информацию', 'Удалить'],
+                                                           ['adEmployeeUpdate', 'adEmployeeDelete']))
     elif call.data == "adEmployeeUpdate":
-        bot.send_message(
-            call.from_user.id, 'Введите номер сотрудника, информацию о котором собираетесь редактировать')
+        bot.edit_message_text(
+            'Введите номер сотрудника, информацию о котором собираетесь редактировать\n\n' + call.message.text,
+            call.from_user.id, call.message.id)
         stack[call.from_user.id]['updateEmployee'] = True
         stack[call.from_user.id]['updateEmployeeId'] = None
         stack[call.from_user.id]['updateEmployeeName'] = None
@@ -484,29 +491,33 @@ def callbackQuery(call):
         bot.send_message(
             call.from_user.id, 'Обновление закончено\n/office для входа в личный кабинет')
     elif call.data == "adEmployeeDelete":
-        bot.send_message(
-            call.from_user.id, 'Введите номер сотрудника, которого желаете удалить из базы')
+        bot.edit_message_text('Введите номер сотрудника, которого желаете удалить из базы\n\n' + call.message.text,
+                              call.from_user.id,
+                              call.message.id)
         stack[call.from_user.id]['deletingEmployee'] = True
     elif call.data == "endEmployeeDelete":
         stack[call.from_user.id]['deletingEmployee'] = False
         bot.send_message(
             call.from_user.id, 'Удаление сотрудников закончено\n/office для входа в личный кабинет')
     elif call.data == "adExpenses":
-        bot.send_message(call.from_user.id, 'Выберите период выгрузки расходов', reply_markup=mk.createMarkup(
-            2, ['24 часа', 'Неделя', 'Месяц', 'Все время'],
-            ['loadExpenses1', 'loadExpenses7', 'loadExpenses30', 'loadExpensesAll']))
+        bot.edit_message_text('Выберите период выгрузки расходов', call.from_user.id, call.message.id,
+                              reply_markup=mk.createMarkup(
+                                  2, ['24 часа', 'Неделя', 'Месяц', 'Все время'],
+                                  ['loadExpenses1', 'loadExpenses7', 'loadExpenses30', 'loadExpensesAll']))
     elif call.data.startswith('loadExpenses'):
         csvLoadSender(call.from_user.id, True, call.data)
     elif call.data == "adIncome":
-        bot.send_message(call.from_user.id, 'Выберите период выгрузки доходов', reply_markup=mk.createMarkup(
-            2, ['24 часа', 'Неделя', 'Месяц', 'Все время'],
-            ['loadIncome1', 'loadIncome7', 'loadIncome30', 'loadIncomeAll']))
+        bot.edit_message_text('Выберите период выгрузки доходов', call.from_user.id, call.message.id,
+                              reply_markup=mk.createMarkup(
+                                  2, ['24 часа', 'Неделя', 'Месяц', 'Все время'],
+                                  ['loadIncome1', 'loadIncome7', 'loadIncome30', 'loadIncomeAll']))
     elif call.data.startswith('loadIncome'):
         csvLoadSender(call.from_user.id, False, call.data)
     elif call.data == 'adPivot':
-        bot.send_message(call.from_user.id, 'Выберите период выгрузки', reply_markup=mk.createMarkup(
-            2, ['24 часа', 'Неделя', 'Месяц', 'Все время'],
-            ['loadPivot1', 'loadPivot7', 'loadPivot30', 'loadPivotAll']))
+        bot.edit_message_text('Выберите период выгрузки', call.from_user.id, call.message.id,
+                              reply_markup=mk.createMarkup(
+                                  2, ['24 часа', 'Неделя', 'Месяц', 'Все время'],
+                                  ['loadPivot1', 'loadPivot7', 'loadPivot30', 'loadPivotAll']))
     elif call.data.startswith('loadPivot'):
         period = periodHandler(call.data, 9, 'WHERE', 'task')
         income = db.ex('SELECT sum(income) FROM task ' + period)
@@ -529,13 +540,13 @@ def callbackQuery(call):
             pivot = f'Сводка за {days} {"день" if int(days) == 1 else "дней"}\n'
         pivot = pivot + \
                 f"Доходы: {income}\nРасходы: {expenses}\nРасходы на З/П: {wage}\nПрибыль: {profit}"
-        bot.send_message(call.from_user.id, pivot)
+        bot.edit_message_text(pivot, call.from_user.id, call.message.id)
     elif call.data == 'adWage':
-        bot.send_message(call.from_user.id,
-                         'Администратору предстоит подтвердить совершенные поездки и начислить за них заработную '
-                         'плату сотрудникам\nЗарплата подтверждается только для сотрудников с установленой часовой '
-                         'ставкой',
-                         reply_markup=mk.createMarkup(1, ['Продолжить?'], ['adWageStart']))
+        bot.edit_message_text(
+            'Администратору предстоит подтвердить совершенные поездки и начислить за них заработную '
+            'плату сотрудникам\nЗарплата подтверждается только для сотрудников с установленой часовой '
+            'ставкой', call.from_user.id, call.message.id,
+            reply_markup=mk.createMarkup(1, ['Продолжить?'], ['adWageStart']))
     elif call.data.startswith('adWageStart'):
         if call.data != 'adWageStart':
             data = call.data.split('//')
@@ -554,14 +565,14 @@ def callbackQuery(call):
         if load:
             employeeToTaskId = load[0][4]
             amount = load[0][3]
-            load = f'Выплата для сотрудника {load[0][0]} за поездку на объект {load[0][1]}\nЗатрачено часов: {load[0][2]}\nВыплата: {int(load[0][3])}'
-            bot.send_message(call.from_user.id, load,
-                             reply_markup=mk.createMarkup(1, ['Подтвердить выплату', 'Отклонить выплату'], [
-                                 f'adWageStartApply//{employeeToTaskId}//{amount}',
-                                 f'adWageStartReject//{employeeToTaskId}']))
+            load = f'Выплата для сотрудника {load[0][0]} за поездку на объект {load[0][1]}\nЗатрачено часов: ' \
+                   f'{load[0][2]}\nВыплата: {int(load[0][3])}'
+            bot.edit_message_text(load, call.from_user.id, call.message.id,
+                                  reply_markup=mk.createMarkup(1, ['Подтвердить выплату', 'Отклонить выплату'], [
+                                      f'adWageStartApply//{employeeToTaskId}//{amount}',
+                                      f'adWageStartReject//{employeeToTaskId}']))
         else:
-            bot.send_message(call.from_user.id,
-                             'Не найдено неоплаченных поездок\n/office')
+            bot.edit_message_text('Не найдено неоплаченных поездок\n/office', call.from_user.id, call.message.id)
     elif call.data == "userTask":
         stack[call.from_user.id]['creatingTask'] = True
         stack[call.from_user.id]['taskObject'] = None
@@ -581,11 +592,13 @@ def callbackQuery(call):
                 [' '.join([str(obj) for obj in item]) for item in lastObject])
             queryText = 'Заполняем задачу\nВведите название нового объекта или пришлите номер одного из ' \
                         'представленных:\n\n' + lastObject
-        bot.send_message(call.from_user.id, queryText)
+        bot.edit_message_text(call.from_user.id, queryText)
     elif call.data.startswith('userIncome'):
         period = int(call.data[10:])
         load = db.ex(
-            f"SELECT sum(amount) FROM payments JOIN employeetotask ON employeetotaskid = employeetotask.id WHERE employeeid = (SELECT id FROM employee WHERE chatid = %s) AND date_trunc('month', NOW()) - INTERVAL '{period} month'  = date_trunc('month', time);",
+            f"SELECT sum(amount) FROM payments JOIN employeetotask ON employeetotaskid = employeetotask.id WHERE "
+            f"employeeid = (SELECT id FROM employee WHERE chatid = %s) AND date_trunc('month', NOW()) -"
+            f" INTERVAL '{period} month'  = date_trunc('month', time);",
             (call.from_user.id,))
         if period == 0:
             markup = mk.createMarkup(
@@ -625,22 +638,25 @@ def callbackQuery(call):
                               visible_file_name='Поездки.csv')
     elif call.data.startswith('adLoadWage'):
         if call.data == 'adLoadWage':
-            bot.send_message(call.from_user.id, 'Выберите период выгрузки транзакций З\П', reply_markup=mk.createMarkup(
-                2, ['24 часа', 'Неделя', 'Месяц', 'Все время'],
-                ['adLoadWage1', 'adLoadWage7', 'adLoadWage30', 'adLoadWageAll']))
+            bot.edit_message_text('Выберите период выгрузки транзакций З/П', call.from_user.id, call.message.id,
+                                  reply_markup=mk.createMarkup(
+                                      2, ['24 часа', 'Неделя', 'Месяц', 'Все время'],
+                                      ['adLoadWage1', 'adLoadWage7', 'adLoadWage30', 'adLoadWageAll']))
         else:
             period = periodHandler(call.data, 10, 'WHERE', 'payments')
-            load = db.ex(
-                "SELECT employee.handle, sum(amount) FROM payments JOIN employeetotask ON employeetotask.id = "
-                "employeetotaskid JOIN employee "
-                "ON employeeid = employee.id GROUP BY employee.handle"
-                f"{period}")
-            if not load:
+            if db.ex("SELECT COUNT(*) FROM employee WHERE name IS NULL")[0][0] != 0:
                 bot.send_message(call.from_user.id,
-                                 'Выплат за данный период не найдено')
+                                 'Часть имен сотрудников не подтверждена, информация о выплатах может отображаться '
+                                 'некорректно\nЧтобы избежать этого, обновите информацию о сотрудниках')
+            load = db.ex(
+                "SELECT employee.name, sum(amount) FROM payments JOIN employeetotask "
+                "ON employeetotask.id = employeetotaskid JOIN employee "
+                f"ON employeeid = employee.id {period} GROUP BY employee.name")
+            if not load:
+                bot.edit_message_text('Выплат за данный период не найдено', call.from_user.id, call.message.id)
             else:
                 bot.send_document(call.from_user.id, csvCreator(
-                    'Сотрудник,Выплата\n', load), visible_file_name='Зарплаты.csv')
+                    'Сотрудник;Выплата\n', load), visible_file_name='Зарплаты.csv')
     elif call.data.startswith('adApproveExpenses'):
         if call.data != 'adApproveExpenses':
             db.ex('UPDATE expenses SET confirmed = %s WHERE id = %s',
@@ -650,14 +666,15 @@ def callbackQuery(call):
             "employee.handle), amount, note, date_trunc('minute', expenses.time) FROM expenses LEFT JOIN task ON "
             "task.id = taskid JOIN employee ON employeeid = employee.id WHERE confirmed IS NULL LIMIT 1; ")
         if not load:
-            bot.send_message(
-                call.from_user.id, 'Неподтвержденных расходов не найдено\n/office для перехода в личный кабинет')
+            bot.edit_message_text('Неподтвержденных расходов не найдено\n/office для перехода в личный кабинет',
+                                  call.from_user.id, call.message.id)
         else:
-            bot.send_message(call.from_user.id,
-                             f'Поездка: {load[0][1]}\nСотрудник: {load[0][2]}\nСумма: {load[0][3]}\nЦель расхода: {load[0][4]}\n{load[0][5]}',
-                             reply_markup=mk.createMarkup(
-                                 1, ['Подтвердить', 'Отклонить'],
-                                 [f'adApproveExpensesAcc{load[0][0]}', f'adApproveExpensesRej{load[0][0]}']))
+            bot.edit_message_text(
+                f'Поездка: {load[0][1]}\nСотрудник: {load[0][2]}\nСумма: {load[0][3]}\nЦель расхода: '
+                f'{load[0][4]}\n{load[0][5]}', call.from_user.id, call.message.id,
+                reply_markup=mk.createMarkup(
+                    1, ['Подтвердить', 'Отклонить'],
+                    [f'adApproveExpensesAcc{load[0][0]}', f'adApproveExpensesRej{load[0][0]}']))
 
 
 def main():

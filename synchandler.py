@@ -21,8 +21,6 @@ month = ['январь', 'февраль', 'март', 'апрель', 'май',
          'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
 
 
-# TODO: настроить нормальное отображение списка сотрдуников(добавить роль)
-
 def stackFilter(message, term, mustbedigit=False):
     if mustbedigit and not message.text.isdigit:
         return False

@@ -101,24 +101,27 @@ def getAutoList():
     return carList
 
 
-def getEmployees(coeff):
+def getEmployees(coeff, admin):
     employeeList = db.ex(
-        f"SELECT id, name {', coeff, wage' if coeff else ''} coeff, wage FROM employee WHERE deleted IS NOT TRUE "
-        f"AND name IS NOT NULL ORDER BY 1")
+        f'''SELECT id, name {', role' if admin else ''} {', coeff, wage' if coeff else ''} '''
+        f'''FROM employee WHERE deleted IS NOT TRUE {"AND role != 'owner'" if not admin else ''} '''
+        f'''AND name IS NOT NULL ORDER BY 1''')
     if employeeList:
         employeeList = '\n'.join(
             [' '.join([str(obj) for obj in item]) for item in employeeList])
     else:
         employeeList = 'Список сотрудников пуст'
     unnamedEmployee = db.ex(
-        'SELECT id, handle FROM employee WHERE deleted IS NOT TRUE AND name IS NULL')
+        f'''SELECT id, handle {', role' if admin else ''} FROM employee WHERE deleted IS NOT TRUE AND name IS NULL '''
+        f'''{"AND role != 'owner'" if not admin else ''}''')
     if unnamedEmployee:
         unnamedEmployee = '\n'.join(
             [' '.join([str(obj) for obj in item]) for item in unnamedEmployee])
         unnamedEmployee = '\nВ базе также есть несколько сотрудников с неподтвержденным именем:\n' + unnamedEmployee
     else:
         unnamedEmployee = ''
-    return employeeList + unnamedEmployee
+    headers = 'id, имя, роль, коэф, З/П\n' if admin else ''
+    return headers + (employeeList + unnamedEmployee).replace('user', 'сотрудник').replace('owner', 'администратор')
 
 
 def uploadPicture(file, message):
@@ -243,7 +246,7 @@ def createTask(message):
                     message.chat.id, 'Машины с таким id не найдено в базе, попробуйте еще раз')
             else:
                 stack[message.chat.id]['taskCar'] = idCar
-                employeeList = getEmployees(coeff=False)
+                employeeList = getEmployees(coeff=False, admin=False)
                 bot.send_message(
                     message.chat.id,
                     'Отлично, теперь введите номера напарников, с которым вы выполняли задачу\nЕсли вы выполняли ее '
@@ -473,7 +476,7 @@ def callbackQuery(call):
         bot.send_message(
             call.from_user.id, 'Удаление автомобилей закончено\n/office для входа в личный кабинет')
     elif call.data == "adEmployee":
-        employeeList = getEmployees(coeff=True)
+        employeeList = getEmployees(coeff=True, admin=True)
         bot.edit_message_text('Список сотрудников:\n' + employeeList, call.from_user.id, call.message.id,
                               reply_markup=mk.createMarkup(1, ['Обновить информацию', 'Удалить'],
                                                            ['adEmployeeUpdate', 'adEmployeeDelete']))
@@ -592,7 +595,7 @@ def callbackQuery(call):
                 [' '.join([str(obj) for obj in item]) for item in lastObject])
             queryText = 'Заполняем задачу\nВведите название нового объекта или пришлите номер одного из ' \
                         'представленных:\n\n' + lastObject
-        bot.edit_message_text(call.from_user.id, queryText)
+        bot.edit_message_text(queryText, call.from_user.id, call.message.id)
     elif call.data.startswith('userIncome'):
         period = int(call.data[10:])
         load = db.ex(

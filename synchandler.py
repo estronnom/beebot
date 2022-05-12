@@ -77,7 +77,7 @@ def insertDigit(message, direction, note, func):
             bot.send_message(message.chat.id, note)
     except ValueError:
         bot.send_message(
-            message.chat.id, 'Число введено некорректо, попробуйте еще раз')
+            message.chat.id, 'Число введено некорректно, попробуйте еще раз')
 
 
 def coalesce(array):
@@ -448,7 +448,7 @@ def callbackQuery(call):
             data[2],
             f'Ваши привилегии обновлены\nНовая роль: {rolemapping[data[3]]}\n/office для перехода в личный кабинет')
         bot.edit_message_text(
-            f'Роль пользователя {data[1]} успешно обновлена\nНовая роль{rolemapping[data[3]]}', call.from_user.id,
+            f'Роль пользователя {data[1]} успешно обновлена\nНовая роль {rolemapping[data[3]]}', call.from_user.id,
             call.message.id,
             reply_markup=None)
     elif call.data == "adAuto":
@@ -612,13 +612,12 @@ def callbackQuery(call):
         else:
             load = f'{int(load[0][0])} руб'
         monthNum = (dt.datetime.today() - dt.timedelta(days=period * 30)).month
-        bot.edit_message_text(
-            f'Доходы за {month[monthNum - 1]}\n{load}', call.from_user.id, call.message.id, reply_markup=markup)
+        bot.send_message(call.from_user.id,
+                         f'Доходы за {month[monthNum - 1]}\n{load}', reply_markup=markup)
     elif call.data == 'userAddExpense':
-        bot.send_message(
-            call.from_user.id,
-            'Каждую статью расходов нужно описать отдельным сообщением в следующей форме:\nсумма '
-            'расхода+пробел+назначение расхода \n\n1500 на бензин\n300 на мобильную связь')
+        bot.edit_message_text('Каждую статью расходов нужно описать отдельным сообщением в следующей форме:\nсумма '
+                              'расхода+пробел+назначение расхода \n\n1500 на бензин\n300 на мобильную связь',
+                              call.from_user.id, call.message.id)
         stack[call.from_user.id]['userAddExpense'] = True
     elif call.data == "userAddExpenseEnd":
         stack[call.from_user.id]['userAddExpense'] = False

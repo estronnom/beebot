@@ -259,7 +259,7 @@ def createTask(message):
         if message.text == '/skip':
             stack[message.chat.id]['taskBuddy'] = 'flagSkipped'
             bot.send_message(
-                message.chat.id, 'Супер, теперь введите количество километров, затраченных на поездку')
+                message.chat.id, 'Отлично, теперь введите количество километров, затраченных на поездку')
         else:
             data = []
             try:
@@ -281,7 +281,6 @@ def createTask(message):
                     message.chat.id, f'Одно из чисел ({ind}) введено некорректно, попробуйте еще раз')
                 return
             stack[message.chat.id]['taskBuddy'] = data
-            print(data)
             bot.send_message(
                 message.chat.id, 'Супер, теперь введите количество километров, затраченных на поездку')
         logging.info(f"createTask:{message.chat.first_name}:{message.text}:{stack[message.chat.id]['taskBuddy']}")
@@ -585,7 +584,7 @@ def callbackQuery(call):
         stack[call.from_user.id]['taskExpenses'] = []
         stack[call.from_user.id]['taskExpensesFinished'] = False
         lastObject = db.ex(
-            'SELECT DISTINCT ON(object) id, object FROM task ORDER BY object, time DESC LIMIT 10;')
+            'SELECT DISTINCT ON(object) id, object FROM task ORDER BY object, time DESC;')
         if not lastObject:
             queryText = 'Заполняем задачу\nДля начала введите название объекта:'
         else:

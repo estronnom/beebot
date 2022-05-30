@@ -10,10 +10,12 @@ from dbhandler import dbHandler
 from markups import markup as mk
 
 baseurl = 'https://cloud-api.yandex.net/v1/disk/'
-yandexHeaders = {'Authorization': constants.DISKAPIKEY}
+yandex_headers = {'Authorization': constants.DISKAPIKEY}
 bot = TeleBot(constants.APIKEY, parse_mode=None)
 db = dbHandler(constants.DBPARAMS)
-logging.basicConfig(filename='beebot.log', encoding='utf-8', level=logging.INFO,
+logging.basicConfig(filename='beebot.log',
+                    encoding='utf-8',
+                    level=logging.INFO,
                     format='%(levelname)s:%(asctime)s %(message)s')
 stack = {}
 rolemapping = {'user': 'пользователь', 'owner': 'владелец'}
@@ -21,7 +23,7 @@ month = ['январь', 'февраль', 'март', 'апрель', 'май',
          'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
 
 
-def stackFilter(message, term, mustbedigit=False):
+def stack_filter(message, term, mustbedigit=False):
     if mustbedigit and not message.text.isdigit:
         return False
     if not stack.get(message.chat.id, False):
@@ -29,11 +31,11 @@ def stackFilter(message, term, mustbedigit=False):
     return stack[message.chat.id].get(term, False)
 
 
-def clearUserStack(id):
-    stack[id] = {}
+def clear_user_stack(user_id):
+    stack[user_id] = {}
 
 
-def periodHandler(calldata, index, keyword, table):
+def period_handler(calldata, index, keyword, table):
     try:
         period = int(calldata[index:])
     except ValueError:
@@ -42,34 +44,34 @@ def periodHandler(calldata, index, keyword, table):
         return f" {keyword} {table}.time >= NOW() - INTERVAL '{period} day'"
 
 
-def csvCreator(headers, array):
+def csv_creator(headers, array):
     rows = '\n'.join([';'.join([str(obj).replace(';', ',')
                                 for obj in item]) for item in array])
     return io.StringIO(headers + rows)
 
 
-def csvLoadSender(idUser, expense, callData):
+def csv_load_sender(id_user, expense, call_data):
     if expense:
-        period = periodHandler(callData, 12, 'AND', 'task')
+        period = period_handler(call_data, 12, 'AND', 'task')
         load = db.ex("SELECT date_trunc('minute', expenses.time), COALESCE(task.object, 'Расход без объекта'), "
                      "COALESCE(employee.name, employee.handle), amount, note FROM expenses LEFT JOIN task ON taskid = "
                      f"task.id JOIN employee ON employeeid = employee.id WHERE confirmed = True {period}")
         headers = 'Время;Объект;Сотрудник;Сумма;Заметка\n'
     else:
-        period = periodHandler(callData, 10, 'AND', 'task')
+        period = period_handler(call_data, 10, 'AND', 'task')
         load = db.ex(
             "SELECT date_trunc('minute', time), task.object, COALESCE(employee.name, employee.handle), income FROM"
             "employeetotask JOIN employee ON employeeid = employee.id JOIN task ON taskid = task.id WHERE main ="
             "True" + period)
         headers = 'Время;Объект;Сотрудник;Сумма\n'
     if not load:
-        bot.send_message(idUser, 'Записей за данный период не найдено')
+        bot.send_message(id_user, 'Записей за данный период не найдено')
     else:
-        bot.send_document(idUser, csvCreator(
+        bot.send_document(id_user, csv_creator(
             headers, load), visible_file_name=f'{"Расходы" if expense else "Доходы"}.csv')
 
 
-def insertDigit(message, direction, note, func):
+def insert_digit(message, direction, note, func):
     try:
         digit = func(message.text.replace(',', '.'))
         stack[message.chat.id][direction] = digit
@@ -88,62 +90,62 @@ def coalesce(array):
         return 0
 
 
-def getAutoList():
-    carList = db.ex(
+def get_auto_list():
+    car_list = db.ex(
         'SELECT id, name, color, licensenum FROM auto WHERE deleted IS NOT True')
-    if carList:
-        carList = '\n'.join([' '.join([str(obj) for obj in item])
-                             for item in carList])
+    if car_list:
+        car_list = '\n'.join([' '.join([str(obj) for obj in item])
+                              for item in car_list])
     else:
-        carList = 'Список авто пуст'
-    return carList
+        car_list = 'Список авто пуст'
+    return car_list
 
 
-def getEmployees(coeff, admin):
-    employeeList = db.ex(
+def get_employees(coeff, admin):
+    employee_list = db.ex(
         f'''SELECT id, name {', role' if admin else ''} {', coeff, wage' if coeff else ''} '''
         f'''FROM employee WHERE deleted IS NOT TRUE {"AND role != 'owner'" if not admin else ''} '''
         f'''AND name IS NOT NULL ORDER BY 1''')
-    if employeeList:
-        employeeList = '\n'.join(
-            [' '.join([str(obj) for obj in item]) for item in employeeList])
+    if employee_list:
+        employee_list = '\n'.join(
+            [' '.join([str(obj) for obj in item]) for item in employee_list])
     else:
-        employeeList = 'Список сотрудников пуст'
-    unnamedEmployee = db.ex(
+        employee_list = 'Список сотрудников пуст'
+    unnamed_employee = db.ex(
         f'''SELECT id, handle {', role' if admin else ''} FROM employee WHERE deleted IS NOT TRUE AND name IS NULL '''
         f'''{"AND role != 'owner'" if not admin else ''}''')
-    if unnamedEmployee:
-        unnamedEmployee = '\n'.join(
-            [' '.join([str(obj) for obj in item]) for item in unnamedEmployee])
-        unnamedEmployee = '\nВ базе также есть несколько сотрудников с неподтвержденным именем:\n' + unnamedEmployee
+    if unnamed_employee:
+        unnamed_employee = '\n'.join(
+            [' '.join([str(obj) for obj in item]) for item in unnamed_employee])
+        unnamed_employee = '\nВ базе также есть несколько сотрудников с неподтвержденным именем:\n' + unnamed_employee
     else:
-        unnamedEmployee = ''
+        unnamed_employee = ''
     headers = 'id, имя, роль, коэф, З/П\n' if admin else ''
-    return headers + (employeeList + unnamedEmployee).replace('user', 'сотрудник').replace('owner', 'администратор')
+    return headers + (employee_list + unnamed_employee).replace('user', 'сотрудник').replace('owner', 'администратор')
 
 
-def uploadPicture(file, message):
+def upload_picture(file, message):
     addurl = f"resources/upload?path={constants.DISKFOLDER}{str(dt.datetime.now())[:21].replace(':', '-')} " \
              f"{message.chat.first_name}"
-    r = requests.get(baseurl + addurl, headers=yandexHeaders)
+    r = requests.get(baseurl + addurl, headers=yandex_headers)
     if r.status_code != 200:
         return False
     r = json.loads(r.text)
     files = {'file': file}
-    r = requests.put(r['href'], headers=yandexHeaders, files=files)
+    r = requests.put(r['href'], headers=yandex_headers, files=files)
     return r.status_code == 201
 
 
 @bot.message_handler(content_types=['photo'])
-def photoHandler(message):
+def photo_handler(message):
     logging.info(f'User: {message.chat.first_name} got into photoHandler')
-    getRole = db.ex('SELECT role FROM employee WHERE chatid = %s AND deleted IS NOT True',
-                    (int(message.chat.id),))
-    if not getRole or (getRole and getRole[0][0] != 'user'):
+    get_role = db.ex('SELECT role FROM employee WHERE chatid = %s AND deleted IS NOT True',
+                     (int(message.chat.id),))
+    if not get_role or (get_role and get_role[0][0] != 'user'):
         return
     file = bot.get_file(message.photo[-1].file_id)
     file = bot.download_file(file.file_path)
-    if uploadPicture(file, message):
+    if upload_picture(file, message):
         bot.send_message(message.chat.id, 'Фото успешно загружено')
     else:
         bot.send_message(
@@ -151,43 +153,45 @@ def photoHandler(message):
 
 
 @bot.message_handler(commands=['start'])
-def startHandler(message):
+def start_handler(message):
     bot.send_message(message.chat.id,
                      'Добро пожаловать!\nДля авторизации как сотрудник отправьте команду /authuser\nДля авторизации '
                      'как администатор отправьте команду /authowner\nВашу заявку должен подтвердить администратор')
 
 
 @bot.message_handler(commands=['office'])
-def officeHandler(message):
-    getRole = db.ex('SELECT role FROM employee WHERE chatid = %s AND deleted IS NOT True',
-                    (int(message.chat.id),))
-    logging.info(f'{message.chat.first_name} got into officeHandler: getRole is {getRole}')
-    if not getRole:
+def office_handler(message):
+    get_role = db.ex('SELECT role FROM employee WHERE chatid = %s AND deleted IS NOT True',
+                     (int(message.chat.id),))
+    logging.info(f'{message.chat.first_name} got into officeHandler: getRole is {get_role}')
+    if not get_role:
         bot.send_message(
             message.chat.id,
             'Такой пользователь не зарегистрирован в системе\nОбратитесь к администратору\n/authuser для авторизации')
-    elif getRole[0][0] == 'owner':
-        bot.send_message(message.chat.id, "Личный кабинет администратора", reply_markup=mk.createMarkup(2,
-                                                                                                        ['Автомобили',
-                                                                                                         'Сотрудники',
-                                                                                                         'Затраты',
-                                                                                                         'Доходы',
-                                                                                                         'Сводка',
-                                                                                                         'Выдать З/П',
-                                                                                                         'Поездки',
-                                                                                                         'Зарплата',
-                                                                                                         'Подтвердить расходы'],
-                                                                                                        [
-                                                                                                            'adAuto',
-                                                                                                            'adEmployee',
-                                                                                                            'adExpenses',
-                                                                                                            'adIncome',
-                                                                                                            'adPivot',
-                                                                                                            'adWage',
-                                                                                                            'adObjects',
-                                                                                                            'adLoadWage',
-                                                                                                            'adApproveExpenses']))
-    elif getRole[0][0] == 'user':
+    elif get_role[0][0] == 'owner':
+        bot.send_message(message.chat.id,
+                         "Личный кабинет администратора",
+                         reply_markup=mk.createMarkup(2,
+                                                      ['Автомобили',
+                                                       'Сотрудники',
+                                                       'Затраты',
+                                                       'Доходы',
+                                                       'Сводка',
+                                                       'Выдать З/П',
+                                                       'Поездки',
+                                                       'Зарплата',
+                                                       'Подтвердить расходы'],
+                                                      [
+                                                          'adAuto',
+                                                          'adEmployee',
+                                                          'adExpenses',
+                                                          'adIncome',
+                                                          'adPivot',
+                                                          'adWage',
+                                                          'adObjects',
+                                                          'adLoadWage',
+                                                          'adApproveExpenses']))
+    elif get_role[0][0] == 'user':
         bot.send_message(message.chat.id,
                          'Личный кабинет сотрудника\nДля загрузки фотоотчета просто отправьте фотографию боту',
                          reply_markup=mk.createMarkup(
@@ -196,16 +200,16 @@ def officeHandler(message):
     else:
         bot.send_message(
             message.chat.id, 'Проблемы с ролью пользователя\nОбратитесь к администратору')
-    clearUserStack(message.chat.id)
+    clear_user_stack(message.chat.id)
 
 
 @bot.message_handler(commands=['authuser', 'authowner'])
 def auth(message):
     role = message.text[5:]
-    currentRole = db.ex(
+    current_role = db.ex(
         'SELECT role, deleted  FROM employee WHERE chatid = %s', (message.chat.id,))
-    logging.info(f'{message.chat.first_name} got into authHandler using {message.text}: current role is {currentRole}')
-    if currentRole and (currentRole[0][0] == role or currentRole[0][1]):
+    logging.info(f'{message.chat.first_name} got into authHandler using {message.text}: current role is {current_role}')
+    if current_role and (current_role[0][0] == role or current_role[0][1]):
         bot.send_message(message.chat.id, 'Вы уже авторизованы')
         return
     for owner in db.ex("SELECT chatid FROM employee WHERE role = 'owner'"):
@@ -221,36 +225,36 @@ def auth(message):
         message.chat.id, 'Запрос на авторизацию успешно отправлен, ожидайте ответа администратора')
 
 
-@bot.message_handler(func=lambda message: stackFilter(message, 'creatingTask') or message.text == '/skip')
-def createTask(message):
+@bot.message_handler(func=lambda message: stack_filter(message, 'creatingTask') or message.text == '/skip')
+def create_task(message):
     if not stack[message.chat.id]['taskObject']:
         try:
-            idObject = int(message.text)
+            id_object = int(message.text)
             objectNameGot = db.ex(
-                'SELECT object FROM task WHERE id = %s', (idObject,))[0][0]
+                'SELECT object FROM task WHERE id = %s', (id_object,))[0][0]
             stack[message.chat.id]['taskObject'] = objectNameGot
         except ValueError:
             stack[message.chat.id]['taskObject'] = message.text
         logging.info(f"createTask:{message.chat.first_name}:{message.text}:{stack[message.chat.id]['taskObject']}")
-        carList = getAutoList()
+        car_list = get_auto_list()
         bot.send_message(
             message.chat.id,
-            'Теперь введите номер(цифру перед названием) автомобиля, на котором была совершена поездка\n' + carList)
+            'Теперь введите номер(цифру перед названием) автомобиля, на котором была совершена поездка\n' + car_list)
     elif not stack[message.chat.id]['taskCar']:
         try:
-            idCar = int(message.text)
-            if not db.ex('SELECT * FROM auto WHERE id = %s', (idCar,)):
+            id_car = int(message.text)
+            if not db.ex('SELECT * FROM auto WHERE id = %s', (id_car,)):
                 bot.send_message(
                     message.chat.id, 'Машины с таким id не найдено в базе, попробуйте еще раз')
             else:
-                stack[message.chat.id]['taskCar'] = idCar
-                employeeList = getEmployees(coeff=False, admin=False)
+                stack[message.chat.id]['taskCar'] = id_car
+                employee_list = get_employees(coeff=False, admin=False)
                 bot.send_message(
                     message.chat.id,
                     'Отлично, теперь введите номера напарников, с которым вы выполняли задачу\nЕсли вы выполняли ее '
-                    'самостоятельно, то отправьте слово /skip\n\n' + employeeList + f'\n\nомера напарников нужно '
-                                                                                    f'вводить одним сообщением через '
-                                                                                    f'пробел:\n2 4 16 17 9')
+                    'самостоятельно, то отправьте слово /skip\n\n' + employee_list + f'\n\nомера напарников нужно '
+                                                                                     f'вводить одним сообщением через '
+                                                                                     f'пробел:\n2 4 16 17 9')
         except ValueError:
             bot.send_message(
                 message.chat.id, 'Число введено некорректно, попробуйте еще раз')
@@ -285,19 +289,19 @@ def createTask(message):
                 message.chat.id, 'Супер, теперь введите количество километров, затраченных на поездку')
         logging.info(f"createTask:{message.chat.first_name}:{message.text}:{stack[message.chat.id]['taskBuddy']}")
     elif not stack[message.chat.id]['taskKm']:
-        insertDigit(message, 'taskKm',
-                    'Отлично, теперь введите количество часов, которое заняла поездка', int)
+        insert_digit(message, 'taskKm',
+                     'Отлично, теперь введите количество часов, которое заняла поездка', int)
         logging.info(f"createTask:{message.chat.first_name}:{message.text}:{stack[message.chat.id]['taskKm']}")
     elif not stack[message.chat.id]['taskTime']:
-        insertDigit(message, 'taskTime',
-                    'Теперь введите сумму, полученную за заказ', int)
+        insert_digit(message, 'taskTime',
+                     'Теперь введите сумму, полученную за заказ', int)
         logging.info(f"createTask:{message.chat.first_name}:{message.text}:{stack[message.chat.id]['taskTime']}")
     elif not stack[message.chat.id]['taskIncome']:
-        insertDigit(message, 'taskIncome',
-                    'Теперь нужно отчитаться о связанных с поездкой расходах\nКаждую статью расходов нужно описать '
-                    'отдельным сообщением в следующей форме: \n\n1500 на бензин\n300 на мобильную связь\n\nКогда вы '
-                    'укажете все расходы(или если они отсутствуют), отправьте команду /skip',
-                    float)
+        insert_digit(message, 'taskIncome',
+                     'Теперь нужно отчитаться о связанных с поездкой расходах\nКаждую статью расходов нужно описать '
+                     'отдельным сообщением в следующей форме: \n\n1500 на бензин\n300 на мобильную связь\n\nКогда вы '
+                     'укажете все расходы(или если они отсутствуют), отправьте команду /skip',
+                     float)
         logging.info(f"createTask:{message.chat.first_name}:{message.text}:{stack[message.chat.id]['taskIncome']}")
     elif not stack[message.chat.id]['taskExpensesFinished']:
         if message.text == '/skip':
@@ -315,11 +319,11 @@ def createTask(message):
             db.ex('INSERT INTO employeetotask(employeeid, taskid, main) VALUES(%s, %s, True)',
                   (idTaskMaker, idTask))
             if stack[message.chat.id]['taskBuddy'] != 'flagSkipped':
-                for id in stack[message.chat.id]['taskBuddy']:
+                for buddy_id in stack[message.chat.id]['taskBuddy']:
                     db.ex(
                         'INSERT INTO employeetotask(employeeid, taskid, main) VALUES (%s, %s, False) ON CONFLICT DO '
                         'NOTHING',
-                        (id, idTask))
+                        (buddy_id, idTask))
             if stack[message.chat.id]['taskExpenses']:
                 for expense in stack[message.chat.id]['taskExpenses']:
                     db.ex('INSERT INTO expenses(taskid, employeeid, amount, note) VALUES (%s, %s, %s, %s)',
@@ -327,7 +331,7 @@ def createTask(message):
             logging.info(f"createTask:{message.chat.first_name}:Task created")
             bot.send_message(
                 message.chat.id, 'Готово! Отчет успешно внесен в базу\n/office для перехода в личный кабинет')
-            clearUserStack(message.chat.id)
+            clear_user_stack(message.chat.id)
         else:
             expense = message.text.split()
             try:
@@ -340,14 +344,14 @@ def createTask(message):
                     stack[message.chat.id]['taskExpenses'].append(
                         (value, ' '.join(expense[1:])))
     else:
-        clearUserStack(message.chat.id)
+        clear_user_stack(message.chat.id)
         bot.send_message(
             message.chat.id,
             'С отчетом о поездке произошла ошибка :(\nПерейдите в личный кабинет /office и попробуйте еще раз')
 
 
-@bot.message_handler(func=lambda message: stackFilter(message, 'addingAuto'))
-def addingAuto(message):
+@bot.message_handler(func=lambda message: stack_filter(message, 'addingAuto'))
+def adding_auto(message):
     logging.info(f'addingAuto:{message.chat.first_name}:{message.text}')
     if not stack[message.chat.id]['addingAutoName']:
         stack[message.chat.id]['addingAutoName'] = message.text
@@ -363,8 +367,8 @@ def addingAuto(message):
             2, ['Добавить еще', 'Закончить'], ['adAutoAdd', 'endAutoAdd']))
 
 
-@bot.message_handler(func=lambda message: stackFilter(message, 'deletingAuto', mustbedigit=True))
-def deletingAuto(message):
+@bot.message_handler(func=lambda message: stack_filter(message, 'deletingAuto', mustbedigit=True))
+def deleting_auto(message):
     logging.info(f'deletingAuto:{message.chat.first_name}:{message.text}')
     db.ex('UPDATE auto SET deleted = True WHERE id = %s',
           param=(int(message.text),))
@@ -372,22 +376,23 @@ def deletingAuto(message):
         2, ['Удалить еще', 'Закончить'], ['adAutoDelete', 'endAutoDelete']))
 
 
-@bot.message_handler(func=lambda message: stackFilter(message, 'updateEmployee'))
-def addingEmployee(message):
+@bot.message_handler(func=lambda message: stack_filter(message, 'updateEmployee'))
+def adding_employee(message):
     logging.info(f"addingExepnse:{message.chat.first_name}:{message.text}:{stack[message.chat.id]['updateEmployeeId']}")
     if not stack[message.chat.id]['updateEmployeeId']:
-        insertDigit(message, 'updateEmployeeId',
-                    'Теперь введите имя для сотрудника', int)
+        insert_digit(message, 'updateEmployeeId',
+                     'Теперь введите имя для сотрудника', int)
     elif not stack[message.chat.id]['updateEmployeeName']:
         stack[message.chat.id]['updateEmployeeName'] = message.text
         bot.send_message(
             message.chat.id,
-            'Теперь введите коэффициент зарплаты для сотрудника (введите 1, чтобы оставить сотрудника без коэффициента)')
+            'Теперь введите коэффициент зарплаты для сотрудника '
+            '(введите 1, чтобы оставить сотрудника без коэффициента)')
     elif not stack[message.chat.id]['updateEmployeeCoeff']:
-        insertDigit(message, 'updateEmployeeCoeff',
-                    'Отлично, теперь введите часовую ставку сотрудника', float)
+        insert_digit(message, 'updateEmployeeCoeff',
+                     'Отлично, теперь введите часовую ставку сотрудника', float)
     elif not stack[message.chat.id]['updateEmployeeWage']:
-        insertDigit(message, 'updateEmployeeWage', None, int)
+        insert_digit(message, 'updateEmployeeWage', None, int)
         db.ex('UPDATE employee SET name = %s, coeff = %s, wage = %s WHERE id = %s',
               (stack[message.chat.id]['updateEmployeeName'], stack[
                   message.chat.id]['updateEmployeeCoeff'], stack[message.chat.id]['updateEmployeeWage'],
@@ -397,16 +402,16 @@ def addingEmployee(message):
                              2, ['Обновить еще', 'Закончить'], ['adEmployeeUpdate', 'endEmployeeUpdate']))
 
 
-@bot.message_handler(func=lambda message: stackFilter(message, 'deletingEmployee', mustbedigit=True))
-def deletingEmployee(message):
+@bot.message_handler(func=lambda message: stack_filter(message, 'deletingEmployee', mustbedigit=True))
+def deleting_employee(message):
     logging.info(f'deletingEmployee:{message.chat.first_name}:{message.text}')
     db.ex('UPDATE employee SET deleted = True WHERE id = %s', param=(message.text,))
     bot.send_message(message.chat.id, f'Сотрудник {message.text} удален из базы', reply_markup=mk.createMarkup(
         2, ['Удалить еще', 'Закончить'], ['adEmployeeDelete', 'endEmployeeDelete']))
 
 
-@bot.message_handler(func=lambda message: stackFilter(message, 'userAddExpense'))
-def addingExpense(message):
+@bot.message_handler(func=lambda message: stack_filter(message, 'userAddExpense'))
+def adding_expense(message):
     logging.info(f'addingExepnse:{message.chat.first_name}:{message.text}')
     try:
         data = message.text.split()
@@ -434,9 +439,9 @@ def addingExpense(message):
 
 
 @bot.callback_query_handler(func=lambda call: True)
-def callbackQuery(call):
+def callback_query(call):
     logging.info(f'callback {call.data}:{call.from_user.first_name}')
-    clearUserStack(call.from_user.id)
+    clear_user_stack(call.from_user.id)
     if call.data.startswith('auth'):
         data = call.data.split('//')
         db.ex(
@@ -451,7 +456,7 @@ def callbackQuery(call):
             call.message.id,
             reply_markup=None)
     elif call.data == "adAuto":
-        autoList = getAutoList()
+        autoList = get_auto_list()
         bot.edit_message_text('Список авто:\n' + autoList, call.from_user.id, call.message.id,
                               reply_markup=mk.createMarkup(2, ['Добавить', 'Удалить'], ['adAutoAdd', 'adAutoDelete']))
     elif call.data == "adAutoAdd":
@@ -473,7 +478,7 @@ def callbackQuery(call):
         bot.send_message(
             call.from_user.id, 'Удаление автомобилей закончено\n/office для входа в личный кабинет')
     elif call.data == "adEmployee":
-        employeeList = getEmployees(coeff=True, admin=True)
+        employeeList = get_employees(coeff=True, admin=True)
         bot.edit_message_text('Список сотрудников:\n' + employeeList, call.from_user.id, call.message.id,
                               reply_markup=mk.createMarkup(1, ['Обновить информацию', 'Удалить'],
                                                            ['adEmployeeUpdate', 'adEmployeeDelete']))
@@ -505,28 +510,28 @@ def callbackQuery(call):
                                   2, ['24 часа', 'Неделя', 'Месяц', 'Все время'],
                                   ['loadExpenses1', 'loadExpenses7', 'loadExpenses30', 'loadExpensesAll']))
     elif call.data.startswith('loadExpenses'):
-        csvLoadSender(call.from_user.id, True, call.data)
+        csv_load_sender(call.from_user.id, True, call.data)
     elif call.data == "adIncome":
         bot.edit_message_text('Выберите период выгрузки доходов', call.from_user.id, call.message.id,
                               reply_markup=mk.createMarkup(
                                   2, ['24 часа', 'Неделя', 'Месяц', 'Все время'],
                                   ['loadIncome1', 'loadIncome7', 'loadIncome30', 'loadIncomeAll']))
     elif call.data.startswith('loadIncome'):
-        csvLoadSender(call.from_user.id, False, call.data)
+        csv_load_sender(call.from_user.id, False, call.data)
     elif call.data == 'adPivot':
         bot.edit_message_text('Выберите период выгрузки', call.from_user.id, call.message.id,
                               reply_markup=mk.createMarkup(
                                   2, ['24 часа', 'Неделя', 'Месяц', 'Все время'],
                                   ['loadPivot1', 'loadPivot7', 'loadPivot30', 'loadPivotAll']))
     elif call.data.startswith('loadPivot'):
-        period = periodHandler(call.data, 9, 'WHERE', 'task')
+        period = period_handler(call.data, 9, 'WHERE', 'task')
         income = db.ex('SELECT sum(income) FROM task ' + period)
         income = coalesce(income)
-        period = periodHandler(call.data, 9, 'AND', 'expenses')
+        period = period_handler(call.data, 9, 'AND', 'expenses')
         expenses = db.ex(
             f"SELECT sum(amount) FROM expenses WHERE confirmed = True {period}")
         expenses = coalesce(expenses)
-        period = periodHandler(call.data, 9, 'WHERE', 'payments')
+        period = period_handler(call.data, 9, 'WHERE', 'payments')
         wage = db.ex(
             "SELECT sum(payments.amount) FROM payments JOIN employeetotask e on payments.employeetotaskid = e.id"
             f" JOIN task on taskid = task.id {period}"
@@ -632,7 +637,7 @@ def callbackQuery(call):
         if not load:
             bot.send_message(call.from_user.id, 'Поездок не найдено')
         else:
-            bot.send_document(call.from_user.id, csvCreator(
+            bot.send_document(call.from_user.id, csv_creator(
                 'ID;Дата;Объект;Сотрудник;Напарник;Авто;Километраж;Длительность;Доход;Расход\n', load),
                               visible_file_name='Поездки.csv')
     elif call.data.startswith('adLoadWage'):
@@ -642,7 +647,7 @@ def callbackQuery(call):
                                       2, ['24 часа', 'Неделя', 'Месяц', 'Все время'],
                                       ['adLoadWage1', 'adLoadWage7', 'adLoadWage30', 'adLoadWageAll']))
         else:
-            period = periodHandler(call.data, 10, 'WHERE', 'payments')
+            period = period_handler(call.data, 10, 'WHERE', 'payments')
             if db.ex("SELECT COUNT(*) FROM employee WHERE name IS NULL")[0][0] != 0:
                 bot.send_message(call.from_user.id,
                                  'Часть имен сотрудников не подтверждена, информация о выплатах может отображаться '
@@ -652,10 +657,12 @@ def callbackQuery(call):
                 "ON employeetotask.id = employeetotaskid JOIN employee "
                 f"ON employeeid = employee.id {period} GROUP BY employee.name")
             if not load:
-                bot.edit_message_text('Выплат за данный период не найдено', call.from_user.id, call.message.id)
+                bot.edit_message_text('Выплат за данный период не найдено',
+                                      call.from_user.id, call.message.id)
             else:
-                bot.send_document(call.from_user.id, csvCreator(
-                    'Сотрудник;Выплата\n', load), visible_file_name='Зарплаты.csv')
+                bot.send_document(call.from_user.id, csv_creator(
+                    'Сотрудник;Выплата\n', load),
+                                  visible_file_name='Зарплаты.csv')
     elif call.data.startswith('adApproveExpenses'):
         if call.data != 'adApproveExpenses':
             db.ex('UPDATE expenses SET confirmed = %s WHERE id = %s',
@@ -665,15 +672,21 @@ def callbackQuery(call):
             "employee.handle), amount, note, date_trunc('minute', expenses.time) FROM expenses LEFT JOIN task ON "
             "task.id = taskid JOIN employee ON employeeid = employee.id WHERE confirmed IS NULL LIMIT 1; ")
         if not load:
-            bot.edit_message_text('Неподтвержденных расходов не найдено\n/office для перехода в личный кабинет',
-                                  call.from_user.id, call.message.id)
+            bot.edit_message_text(
+                'Неподтвержденных расходов не найдено\n'
+                '/office для перехода в личный кабинет',
+                call.from_user.id, call.message.id)
         else:
             bot.edit_message_text(
-                f'Поездка: {load[0][1]}\nСотрудник: {load[0][2]}\nСумма: {load[0][3]}\nЦель расхода: '
-                f'{load[0][4]}\n{load[0][5]}', call.from_user.id, call.message.id,
+                f'Поездка: {load[0][1]}\nСотрудник:'
+                f' {load[0][2]}\nСумма: {load[0][3]}\nЦель расхода: '
+                f'{load[0][4]}\n{load[0][5]}',
+                call.from_user.id,
+                call.message.id,
                 reply_markup=mk.createMarkup(
                     1, ['Подтвердить', 'Отклонить'],
-                    [f'adApproveExpensesAcc{load[0][0]}', f'adApproveExpensesRej{load[0][0]}']))
+                    [f'adApproveExpensesAcc{load[0][0]}',
+                     f'adApproveExpensesRej{load[0][0]}']))
 
 
 def main():

@@ -4,6 +4,7 @@ import json
 import requests
 import logging
 import io
+import secrets
 
 import constants
 from dbhandler import dbHandler
@@ -47,7 +48,7 @@ def period_handler(calldata, index, keyword, table):
 def csv_creator(headers, array):
     rows = '\n'.join([';'.join([str(obj).replace(';', ',')
                                 for obj in item]) for item in array])
-    return io.StringIO(headers + rows)
+    return headers + rows
 
 
 def csv_load_sender(id_user, expense, call_data):
@@ -67,8 +68,11 @@ def csv_load_sender(id_user, expense, call_data):
     if not load:
         bot.send_message(id_user, 'Записей за данный период не найдено')
     else:
-        bot.send_document(id_user, csv_creator(
-            headers, load), visible_file_name=f'{"Расходы" if expense else "Доходы"}.csv')
+        csv_str = csv_creator(headers, load)
+        bot.send_document(id_user, io.BytesIO(csv_str.encode()),
+                          visible_file_name=f'{"Расходы" if expense else "Доходы"}.csv')
+        bot.send_document(id_user, io.BytesIO(csv_str.encode('cp1251')),
+                          visible_file_name=f'{"Расходы" if expense else "Доходы"}-1251.csv')
 
 
 def insert_digit(message, direction, note, func):
@@ -124,9 +128,14 @@ def get_employees(coeff, admin):
     return headers + (employee_list + unnamed_employee).replace('user', 'сотрудник').replace('owner', 'администратор')
 
 
-def upload_picture(file, message):
-    addurl = f"resources/upload?path={constants.DISKFOLDER}{str(dt.datetime.now())[:21].replace(':', '-')} " \
-             f"{message.chat.first_name}"
+def upload_picture(message, section, folder):
+    file = bot.get_file(message.photo[-1].file_id)
+    file = bot.download_file(file.file_path)
+    addurl = f"resources?path={section}{folder}"
+    r = requests.put(baseurl + addurl, headers=yandex_headers)
+    if r.status_code not in (201, 409):
+        return False
+    addurl = f"resources/upload?path={section}{folder}%2F{message.chat.first_name} {secrets.token_urlsafe(4)}"
     r = requests.get(baseurl + addurl, headers=yandex_headers)
     if r.status_code != 200:
         return False
@@ -136,20 +145,54 @@ def upload_picture(file, message):
     return r.status_code == 201
 
 
-@bot.message_handler(content_types=['photo'])
-def photo_handler(message):
-    logging.info(f'User: {message.chat.first_name} got into photoHandler')
-    get_role = db.ex('SELECT role FROM employee WHERE chatid = %s AND deleted IS NOT True',
-                     (int(message.chat.id),))
-    if not get_role or (get_role and get_role[0][0] != 'user'):
+@bot.message_handler(func=lambda message: stack_filter(message, 'userPictureTrip'), content_types=['text', 'photo'])
+def upload_trip_report(message):
+    data = stack[message.chat.id].get('userPictureTripData', None)
+    if data:
+        if upload_picture(message, constants.TRIPREPORTFOLDER, f'{data[0][1].strftime("%Y-%m-%d")} {data[0][0]}'):
+            bot.send_message(message.chat.id,
+                             'Фото успешно загружено\n'
+                             'Для загрузки еще одного фото по этому же'
+                             ' объекту просто отправьте его в чат\n'
+                             'Если вы закончили загружать фотографии - '
+                             'обязательно перейдите в /office ')
+        else:
+            bot.send_message(message.chat.id, 'С загрузкой фото произошла ошибка :(\n'
+                                              'Попробуйте еще раз или обратитесь к администратору')
         return
-    file = bot.get_file(message.photo[-1].file_id)
-    file = bot.download_file(file.file_path)
-    if upload_picture(file, message):
-        bot.send_message(message.chat.id, 'Фото успешно загружено')
-    else:
-        bot.send_message(
-            message.chat.id, 'С загрузкой фотографии произошла ошибка, обратитесь к администратору')
+    try:
+        trip_id = int(message.text)
+    except ValueError:
+        bot.send_message(message.chat.id,
+                         'Номер поездки введен некорректно, попробуйте еще раз')
+        return
+    trip_object = db.ex('SELECT object, time FROM task WHERE id = %s', (trip_id,))
+    if not trip_object:
+        bot.send_message(message.chat.id,
+                         'Поездки с таким номером не найдено, попробуйте еще раз')
+        return
+    stack[message.chat.id]['userPictureTripData'] = trip_object
+    bot.send_message(message.chat.id, 'Отлично, теперь отправьте фото для загрузки')
+
+
+def upload_account_report():
+    pass
+
+
+# @bot.message_handler(content_types=['photo'])
+# def photo_handler(message):
+#     logging.info(f'User: {message.chat.first_name} got into photoHandler')
+#     get_role = db.ex('SELECT role FROM employee WHERE chatid = %s AND deleted IS NOT True',
+#                      (int(message.chat.id),))
+#     if not get_role or (get_role and get_role[0][0] != 'user'):
+#         return
+#     file = bot.get_file(message.photo[-1].file_id)
+#     file = bot.download_file(file.file_path)
+#     if upload_picture(file, message):
+#         bot.send_message(message.chat.id, 'Фото успешно загружено')
+#     else:
+#         bot.send_message(
+#             message.chat.id, 'С загрузкой фотографии произошла ошибка, обратитесь к администратору')
 
 
 @bot.message_handler(commands=['start'])
@@ -195,8 +238,15 @@ def office_handler(message):
         bot.send_message(message.chat.id,
                          'Личный кабинет сотрудника\nДля загрузки фотоотчета просто отправьте фотографию боту',
                          reply_markup=mk.createMarkup(
-                             1, ['Отчитаться о поездке\U0001f4dd', 'Мои доходы\U0001f4b0', 'Учесть расход\U0001f4b8'],
-                             ['userTask', 'userIncome0', 'userAddExpense']))
+                             1,
+                             ['Отчитаться о поездке\U0001f4dd',
+                              'Мои доходы\U0001f4b0',
+                              'Учесть расход\U0001f4b8',
+                              'Загрузить фотоотчет\U0001f4f7'],
+                             ['userTask',
+                              'userIncome0',
+                              'userAddExpense',
+                              'userPicture']))
     else:
         bot.send_message(
             message.chat.id, 'Проблемы с ролью пользователя\nОбратитесь к администратору')
@@ -590,15 +640,15 @@ def callback_query(call):
         stack[call.from_user.id]['taskIncome'] = None
         stack[call.from_user.id]['taskExpenses'] = []
         stack[call.from_user.id]['taskExpensesFinished'] = False
-        lastObject = db.ex(
+        last_object = db.ex(
             'SELECT DISTINCT ON(object) id, object FROM task ORDER BY object, time DESC;')
-        if not lastObject:
+        if not last_object:
             queryText = 'Заполняем задачу\nДля начала введите название объекта:'
         else:
-            lastObject = '\n'.join(
-                [' '.join([str(obj) for obj in item]) for item in lastObject])
+            last_object = '\n'.join(
+                [' '.join([str(obj) for obj in item]) for item in last_object])
             queryText = 'Заполняем задачу\nВведите название нового объекта или пришлите номер одного из ' \
-                        'представленных:\n\n' + lastObject
+                        'представленных:\n\n' + last_object
         bot.edit_message_text(queryText, call.from_user.id, call.message.id)
     elif call.data.startswith('userIncome'):
         period = int(call.data[10:])
@@ -689,6 +739,30 @@ def callback_query(call):
                     1, ['Подтвердить', 'Отклонить'],
                     [f'adApproveExpensesAcc{load[0][0]}',
                      f'adApproveExpensesRej{load[0][0]}']))
+    elif call.data.startswith('userPicture'):
+        if call.data.endswith('Picture'):
+            bot.edit_message_text('Какой отчет вы желаете загрузить?',
+                                  call.from_user.id,
+                                  call.message.id,
+                                  reply_markup=mk.createMarkup(
+                                      1,
+                                      ['Акт выполненных работ',
+                                       'Отчет о движении средств'],
+                                      ['userPictureTrip',
+                                       'userPictureAccount']
+                                  ))
+        elif call.data.startswith('userPictureTrip'):
+            if call.data == 'userPictureTrip':
+                objects = db.ex("SELECT id, object, date_trunc('minute', time) FROM task WHERE "
+                                "time >= NOW() - INTERVAL '30 day' ORDER BY time DESC")
+                objects = '\n'.join(
+                    [' '.join([str(obj) for obj in item]) for item in objects])
+                stack[call.from_user.id]['userPictureTrip'] = True
+                bot.edit_message_text(f'Пришлите номер поездки, о которой вы хотите отчитаться\n\n{objects}',
+                                      call.from_user.id,
+                                      call.message.id)
+        elif call.data.startswith('userPictureAccount'):
+            pass
 
 
 def main():

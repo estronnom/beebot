@@ -172,15 +172,15 @@ def office_handler(message):
         bot.send_message(message.chat.id,
                          "Личный кабинет администратора",
                          reply_markup=mk.createMarkup(2,
-                                                      ['Автомобили',
-                                                       'Сотрудники',
-                                                       'Затраты',
-                                                       'Доходы',
-                                                       'Сводка',
-                                                       'Выдать З/П',
-                                                       'Поездки',
-                                                       'Зарплата',
-                                                       'Подтвердить расходы'],
+                                                      ['Автомобили\U0001f690',
+                                                       'Сотрудники\U0001f468',
+                                                       'Затраты\U0001f4b0',
+                                                       'Доходы\U0001f3e6',
+                                                       'Сводка\U0001f4c8',
+                                                       'Выдать З/П\U0001f4b8',
+                                                       'Поездки\U0001f6e3\uFE0F',
+                                                       'Зарплата\U0001f4b5',
+                                                       'Подтвердить расходы\U0001f4dd'],
                                                       [
                                                           'adAuto',
                                                           'adEmployee',
@@ -195,7 +195,7 @@ def office_handler(message):
         bot.send_message(message.chat.id,
                          'Личный кабинет сотрудника\nДля загрузки фотоотчета просто отправьте фотографию боту',
                          reply_markup=mk.createMarkup(
-                             1, ['Отчитаться о поездке', 'Мои доходы', 'Учесть расход'],
+                             1, ['Отчитаться о поездке\U0001f4dd', 'Мои доходы\U0001f4b0', 'Учесть расход\U0001f4b8'],
                              ['userTask', 'userIncome0', 'userAddExpense']))
     else:
         bot.send_message(
@@ -219,8 +219,11 @@ def auth(message):
                          f'{message.chat.last_name if message.chat.last_name else ""}\n@'
                          f'{message.chat.username}\nЗапрашиваемая роль: {rolemapping[role]}',
                          reply_markup=mk.createMarkup(
-                             1, ['Авторизовать'], [
-                                 f'auth//{message.chat.username if message.chat.username else f"{message.chat.first_name}"}//{message.chat.id}//{role}//{owner[0]}']))
+                             1,
+                             ['Авторизовать'],
+                             [f'auth//'
+                              f'{message.chat.username if message.chat.username else f"{message.chat.first_name}"}'
+                              f'//{message.chat.id}//{role}//{owner[0]}']))
     bot.send_message(
         message.chat.id, 'Запрос на авторизацию успешно отправлен, ожидайте ответа администратора')
 
@@ -543,8 +546,7 @@ def callback_query(call):
         else:
             days = period.split("'")[1].split()[0]
             pivot = f'Сводка за {days} {"день" if int(days) == 1 else "дней"}\n'
-        pivot = pivot + \
-                f"Доходы: {income}\nРасходы: {expenses}\nРасходы на З/П: {wage}\nПрибыль: {profit}"
+        pivot = pivot + f"Доходы: {income}\nРасходы: {expenses}\nРасходы на З/П: {wage}\nПрибыль: {profit}"
         bot.edit_message_text(pivot, call.from_user.id, call.message.id)
     elif call.data == 'adWage':
         bot.edit_message_text(

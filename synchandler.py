@@ -128,6 +128,22 @@ def get_employees(coeff, admin):
     return headers + (employee_list + unnamed_employee).replace('user', 'сотрудник').replace('owner', 'администратор')
 
 
+def get_time_range():
+    now = dt.datetime.now()
+    first_period_start = now.replace(day=1)
+    first_period_end = first_period_start + dt.timedelta(days=14)
+    pre_period_start = (first_period_start - dt.timedelta(days=1)).replace(day=1) + dt.timedelta(days=15)
+    pre_period_end = first_period_start - dt.timedelta(days=1)
+    second_period_start = first_period_end + dt.timedelta(days=1)
+    second_period_end = now.replace(month=(now.month + 1) % 12) - dt.timedelta(days=1)
+    post_period_start = now.replace(month=(now.month + 1) % 12)
+    post_period_end = post_period_start + dt.timedelta(days=14)
+    return [pre_period_start, pre_period_end,
+            first_period_start, first_period_end,
+            second_period_start, second_period_end,
+            post_period_start, post_period_end]
+
+
 def upload_picture(message, section, folder):
     file = bot.get_file(message.photo[-1].file_id)
     file = bot.download_file(file.file_path)
@@ -155,10 +171,16 @@ def upload_trip_report(message):
                              'Для загрузки еще одного фото по этому же'
                              ' объекту просто отправьте его в чат\n'
                              'Если вы закончили загружать фотографии - '
-                             'обязательно перейдите в /office ')
+                             'обязательно нажмите на кнопку ниже',
+                             reply_markup=mk.createMarkup(1,
+                                                          ['Закончить'],
+                                                          ['endPictureUploading']))
         else:
             bot.send_message(message.chat.id, 'С загрузкой фото произошла ошибка :(\n'
-                                              'Попробуйте еще раз или обратитесь к администратору')
+                                              'Попробуйте еще раз или обратитесь к администратору',
+                             reply_markup=mk.createMarkup(1,
+                                                          ['Закончить'],
+                                                          ['endPictureUploading']))
         return
     try:
         trip_id = int(message.text)
@@ -175,24 +197,25 @@ def upload_trip_report(message):
     bot.send_message(message.chat.id, 'Отлично, теперь отправьте фото для загрузки')
 
 
-def upload_account_report():
-    pass
-
-
-# @bot.message_handler(content_types=['photo'])
-# def photo_handler(message):
-#     logging.info(f'User: {message.chat.first_name} got into photoHandler')
-#     get_role = db.ex('SELECT role FROM employee WHERE chatid = %s AND deleted IS NOT True',
-#                      (int(message.chat.id),))
-#     if not get_role or (get_role and get_role[0][0] != 'user'):
-#         return
-#     file = bot.get_file(message.photo[-1].file_id)
-#     file = bot.download_file(file.file_path)
-#     if upload_picture(file, message):
-#         bot.send_message(message.chat.id, 'Фото успешно загружено')
-#     else:
-#         bot.send_message(
-#             message.chat.id, 'С загрузкой фотографии произошла ошибка, обратитесь к администратору')
+@bot.message_handler(func=lambda message: stack_filter(message, 'userPictureAccountData'),
+                     content_types=['photo'])
+def upload_account_report(message):
+    if upload_picture(message, constants.ACCOUNTREPORTFOLDER, stack[message.chat.id]['userPictureAccountData']):
+        bot.send_message(message.chat.id,
+                         'Фото успешно загружено\n'
+                         'Для загрузки еще одного фото по этому же'
+                         ' объекту просто отправьте его в чат\n'
+                         'Если вы закончили загружать фотографии - '
+                         'обязательно нажмите на кнопку ниже',
+                         reply_markup=mk.createMarkup(1,
+                                                      ['Закончить'],
+                                                      ['endPictureUploading']))
+    else:
+        bot.send_message(message.chat.id, 'С загрузкой фото произошла ошибка :(\n'
+                                          'Попробуйте еще раз или обратитесь к администратору',
+                         reply_markup=mk.createMarkup(1,
+                                                      ['Закончить'],
+                                                      ['endPictureUploading']))
 
 
 @bot.message_handler(commands=['start'])
@@ -751,18 +774,43 @@ def callback_query(call):
                                       ['userPictureTrip',
                                        'userPictureAccount']
                                   ))
-        elif call.data.startswith('userPictureTrip'):
+        elif call.data.endswith('Trip'):
             if call.data == 'userPictureTrip':
                 objects = db.ex("SELECT id, object, date_trunc('minute', time) FROM task WHERE "
                                 "time >= NOW() - INTERVAL '30 day' ORDER BY time DESC")
                 objects = '\n'.join(
                     [' '.join([str(obj) for obj in item]) for item in objects])
                 stack[call.from_user.id]['userPictureTrip'] = True
-                bot.edit_message_text(f'Пришлите номер поездки, о которой вы хотите отчитаться\n\n{objects}',
+                bot.edit_message_text(f'Пришлите номер поездки, о которой'
+                                      f' вы хотите отчитаться\n\n{objects}',
                                       call.from_user.id,
                                       call.message.id)
-        elif call.data.startswith('userPictureAccount'):
-            pass
+        elif call.data.endswith('Account'):
+            periods = get_time_range()
+            periods = [i.strftime("%d.%m.%Y") for i in periods]
+            periods = ['-'.join(periods[i:i + 2]) for i in range(0, len(periods), 2)]
+            bot.edit_message_text('Выберите отчетный период',
+                                  call.from_user.id,
+                                  call.message.id,
+                                  reply_markup=mk.createMarkup(
+                                      1,
+                                      periods,
+                                      [f'userPictureAccount//{i}' for i in periods]
+                                  ))
+        else:
+            stack[call.from_user.id]['userPictureAccountData'] = call.data[20:]
+            bot.edit_message_text('Отлично, отправьте фото для загрузки',
+                                  call.from_user.id,
+                                  call.message.id,
+                                  reply_markup=mk.createMarkup(
+                                      1,
+                                      ['Отменить загрузку фото'],
+                                      ['endPictureUploading']
+                                  ))
+    elif call.data == 'endPictureUploading':
+        bot.edit_message_text('Перейти в /office',
+                              call.from_user.id,
+                              call.message.id)
 
 
 def main():

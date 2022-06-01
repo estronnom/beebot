@@ -60,10 +60,10 @@ def csv_load_sender(id_user, expense, call_data):
         headers = 'Время;Объект;Сотрудник;Сумма;Заметка\n'
     else:
         period = period_handler(call_data, 10, 'AND', 'task')
-        load = db.ex(
-            "SELECT date_trunc('minute', time), task.object, COALESCE(employee.name, employee.handle), income FROM"
-            "employeetotask JOIN employee ON employeeid = employee.id JOIN task ON taskid = task.id WHERE main ="
-            "True" + period)
+        # load = db.ex(
+        #     "SELECT date_trunc('minute', time), task.object, COALESCE(employee.name, employee.handle), income FROM "
+        #     " employeetotask JOIN employee ON employeeid = employee.id JOIN task ON taskid = task.id WHERE main = "
+        #     " True" + period)
         headers = 'Время;Объект;Сотрудник;Сумма\n'
     if not load:
         bot.send_message(id_user, 'Записей за данный период не найдено')
@@ -105,9 +105,9 @@ def get_auto_list():
     return car_list
 
 
-def get_employees(coeff, admin):
+def get_employees(admin):
     employee_list = db.ex(
-        f'''SELECT id, name {', role' if admin else ''} {', coeff, wage' if coeff else ''} '''
+        f'''SELECT id, name {', role' if admin else ''} '''
         f'''FROM employee WHERE deleted IS NOT TRUE {"AND role != 'owner'" if not admin else ''} '''
         f'''AND name IS NOT NULL ORDER BY 1''')
     if employee_list:
@@ -159,6 +159,57 @@ def upload_picture(message, section, folder):
     files = {'file': file}
     r = requests.put(r['href'], headers=yandex_headers, files=files)
     return r.status_code == 201
+
+
+@bot.message_handler(commands=['office'])
+def office_handler(message):
+    get_role = db.ex('SELECT role FROM employee WHERE chatid = %s AND deleted IS NOT True',
+                     (int(message.chat.id),))
+    logging.info(f'{message.chat.first_name} got into officeHandler: getRole is {get_role}')
+    if not get_role:
+        bot.send_message(
+            message.chat.id,
+            'Такой пользователь не зарегистрирован в системе\nОбратитесь к администратору\n/authuser для авторизации')
+    elif get_role[0][0] == 'owner':
+        bot.send_message(message.chat.id,
+                         "Личный кабинет администратора",
+                         reply_markup=mk.createMarkup(2,
+                                                      ['Автомобили\U0001f690',
+                                                       'Сотрудники\U0001f468',
+                                                       'Затраты\U0001f4b0',
+                                                       'Доходы\U0001f3e6',
+                                                       'Сводка\U0001f4c8',
+                                                       'Выдать З/П\U0001f4b8',
+                                                       'Поездки\U0001f6e3\uFE0F',
+                                                       'Зарплата\U0001f4b5',
+                                                       'Подтвердить расходы\U0001f4dd'],
+                                                      [
+                                                          'adAuto',
+                                                          'adEmployee',
+                                                          'adExpenses',
+                                                          'adIncome',
+                                                          'adPivot',
+                                                          'adWage',
+                                                          'adObjects',
+                                                          'adLoadWage',
+                                                          'adApproveExpenses']))
+    elif get_role[0][0] == 'user':
+        bot.send_message(message.chat.id,
+                         'Личный кабинет сотрудника\nДля загрузки фотоотчета просто отправьте фотографию боту',
+                         reply_markup=mk.createMarkup(
+                             1,
+                             ['Отчитаться о поездке\U0001f4dd',
+                              'Мои доходы\U0001f4b0',
+                              'Учесть расход\U0001f4b8',
+                              'Загрузить фотоотчет\U0001f4f7'],
+                             ['userTask',
+                              'userIncome0',
+                              'userAddExpense',
+                              'userPicture']))
+    else:
+        bot.send_message(
+            message.chat.id, 'Проблемы с ролью пользователя\nОбратитесь к администратору')
+    clear_user_stack(message.chat.id)
 
 
 @bot.message_handler(func=lambda message: stack_filter(message, 'userPictureTrip'), content_types=['text', 'photo'])
@@ -225,57 +276,6 @@ def start_handler(message):
                      'как администатор отправьте команду /authowner\nВашу заявку должен подтвердить администратор')
 
 
-@bot.message_handler(commands=['office'])
-def office_handler(message):
-    get_role = db.ex('SELECT role FROM employee WHERE chatid = %s AND deleted IS NOT True',
-                     (int(message.chat.id),))
-    logging.info(f'{message.chat.first_name} got into officeHandler: getRole is {get_role}')
-    if not get_role:
-        bot.send_message(
-            message.chat.id,
-            'Такой пользователь не зарегистрирован в системе\nОбратитесь к администратору\n/authuser для авторизации')
-    elif get_role[0][0] == 'owner':
-        bot.send_message(message.chat.id,
-                         "Личный кабинет администратора",
-                         reply_markup=mk.createMarkup(2,
-                                                      ['Автомобили\U0001f690',
-                                                       'Сотрудники\U0001f468',
-                                                       'Затраты\U0001f4b0',
-                                                       'Доходы\U0001f3e6',
-                                                       'Сводка\U0001f4c8',
-                                                       'Выдать З/П\U0001f4b8',
-                                                       'Поездки\U0001f6e3\uFE0F',
-                                                       'Зарплата\U0001f4b5',
-                                                       'Подтвердить расходы\U0001f4dd'],
-                                                      [
-                                                          'adAuto',
-                                                          'adEmployee',
-                                                          'adExpenses',
-                                                          'adIncome',
-                                                          'adPivot',
-                                                          'adWage',
-                                                          'adObjects',
-                                                          'adLoadWage',
-                                                          'adApproveExpenses']))
-    elif get_role[0][0] == 'user':
-        bot.send_message(message.chat.id,
-                         'Личный кабинет сотрудника\nДля загрузки фотоотчета просто отправьте фотографию боту',
-                         reply_markup=mk.createMarkup(
-                             1,
-                             ['Отчитаться о поездке\U0001f4dd',
-                              'Мои доходы\U0001f4b0',
-                              'Учесть расход\U0001f4b8',
-                              'Загрузить фотоотчет\U0001f4f7'],
-                             ['userTask',
-                              'userIncome0',
-                              'userAddExpense',
-                              'userPicture']))
-    else:
-        bot.send_message(
-            message.chat.id, 'Проблемы с ролью пользователя\nОбратитесь к администратору')
-    clear_user_stack(message.chat.id)
-
-
 @bot.message_handler(commands=['authuser', 'authowner'])
 def auth(message):
     role = message.text[5:]
@@ -338,7 +338,7 @@ def create_task(message):
                     message.chat.id, 'Машины с таким id не найдено в базе, попробуйте еще раз')
             else:
                 stack[message.chat.id]['taskCar'] = id_car
-                employee_list = get_employees(coeff=False, admin=False)
+                employee_list = get_employees(admin=False)
                 bot.send_message(
                     message.chat.id,
                     'Отлично, теперь введите номера напарников, с которым вы выполняли задачу\nЕсли вы выполняли ее '
@@ -577,7 +577,7 @@ def callback_query(call):
         bot.send_message(
             call.from_user.id, 'Удаление автомобилей закончено\n/office для входа в личный кабинет')
     elif call.data == "adEmployee":
-        employeeList = get_employees(coeff=True, admin=True)
+        employeeList = get_employees(admin=True)
         bot.edit_message_text('Список сотрудников:\n' + employeeList, call.from_user.id, call.message.id,
                               reply_markup=mk.createMarkup(1, ['Обновить информацию', 'Удалить'],
                                                            ['adEmployeeUpdate', 'adEmployeeDelete']))
@@ -588,7 +588,6 @@ def callback_query(call):
         stack[call.from_user.id]['updateEmployee'] = True
         stack[call.from_user.id]['updateEmployeeId'] = None
         stack[call.from_user.id]['updateEmployeeName'] = None
-        stack[call.from_user.id]['updateEmployeeCoeff'] = None
         stack[call.from_user.id]['updateEmployeeWage'] = None
     elif call.data == "endEmployeeUpdate":
         stack[call.from_user.id]['addingEmployee'] = False
@@ -662,14 +661,16 @@ def callback_query(call):
                 db.ex(
                     'UPDATE employeetotask SET paid = false WHERE id = %s', (data[1],))
         load = db.ex(
-            'SELECT COALESCE(name, handle), object, wage + task.hoursoverspent * wage / 8, employeetotask.id AS sum '
-            'FROM employeetotask JOIN employee ON employeeid = employee.id JOIN task ON taskid = task.id WHERE paid '
+            'SELECT COALESCE(name, handle), object, wage + task.hoursoverspent * wage / 8,'
+            ' employeetotask.id, task.hoursoverspent AS sum '
+            'FROM employeetotask JOIN employee ON employeeid = employee.id'
+            ' JOIN task ON taskid = task.id WHERE paid '
             'IS NULL AND wage IS NOT NULL LIMIT 1;')
         if load:
-            employeeToTaskId = load[0][4]
-            amount = load[0][3]
-            load = f'Выплата для сотрудника {load[0][0]} за поездку на объект {load[0][1]}\nЗатрачено часов: ' \
-                   f'{load[0][2]}\nВыплата: {amount}'
+            employeeToTaskId = load[0][3]
+            amount = load[0][2]
+            load = f'Выплата для сотрудника {load[0][0]} за поездку на объект {load[0][1]}\nПереработка: ' \
+                   f'{load[0][4]}\nВыплата: {amount}'
             bot.edit_message_text(load, call.from_user.id, call.message.id,
                                   reply_markup=mk.createMarkup(1, ['Подтвердить выплату', 'Отклонить выплату'], [
                                       f'adWageStartApply//{employeeToTaskId}//{amount}',
@@ -732,7 +733,7 @@ def callback_query(call):
             "SELECT task.id, date_trunc('minutes', time), object,"
             " (SELECT name FROM employeetotask JOIN employee ON "
             "employeeid = employee.id WHERE task.id = taskid AND main = true),"
-            " (SELECT name FROM employeetotask JOIN "
+            " array(SELECT name FROM employeetotask JOIN "
             "employee ON employeeid = employee.id "
             "WHERE task.id = taskid AND main = false), auto.name,"
             "hoursoverspent, income, (SELECT sum(amount) FROM expenses WHERE "
@@ -741,9 +742,11 @@ def callback_query(call):
         if not load:
             bot.send_message(call.from_user.id, 'Поездок не найдено')
         else:
-            bot.send_document(call.from_user.id, csv_creator(
-                'ID;Дата;Объект;Сотрудник;Напарник;Авто;Километраж;Переработка;Доход;Расход\n', load),
+            csv_str = csv_creator('ID;Дата;Объект;Сотрудник;Напарник;Авто;Километраж;Переработка;Доход;Расход\n', load)
+            bot.send_document(call.from_user.id, io.BytesIO(csv_str.encode()),
                               visible_file_name='Поездки.csv')
+            bot.send_document(call.from_user.id, io.BytesIO(csv_str.encode('cp1251')),
+                              visible_file_name='Поездки-1251.csv')
     elif call.data.startswith('adLoadWage'):
         if call.data == 'adLoadWage':
             bot.edit_message_text('Выберите период выгрузки транзакций З/П', call.from_user.id, call.message.id,

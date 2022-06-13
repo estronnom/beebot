@@ -4,7 +4,7 @@ import psycopg2.errors
 
 class DatabaseHandler:
     def __init__(self, params):
-        self.params = params
+        self._params = params
         self.conn = psycopg2.connect(**params)
         self.cur = self.conn.cursor()
 
@@ -26,9 +26,7 @@ class DatabaseHandler:
             print(exc)
             if not retry:
                 try:
-                    self.conn = psycopg2.connect(**self.params)
+                    self.conn = psycopg2.connect(**self._params)
                     return self.ex(query, param, True)
                 except psycopg2.errors as exc:
                     print(exc)
-
-

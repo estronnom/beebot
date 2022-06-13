@@ -19,7 +19,10 @@ class DatabaseHandler:
                 self.cur.execute(query)
             else:
                 self.cur.execute(query, param)
+            self.conn.commit()
+            return self.cur.fetchall()
         except Exception as exc:
+            self.conn.commit()
             print(exc)
             if not retry:
                 try:
@@ -27,6 +30,5 @@ class DatabaseHandler:
                     return self.ex(query, param, True)
                 except psycopg2.errors as exc:
                     print(exc)
-        finally:
-            self.conn.commit()
-            return self.cur.fetchall()
+
+

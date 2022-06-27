@@ -14,6 +14,7 @@ class DatabaseHandler:
         self.conn.close()
 
     def ex(self, query, param=None, retry=False):
+        data = None
         try:
             self.cur.execute(query, param)
         except Exception as exc:
@@ -23,6 +24,9 @@ class DatabaseHandler:
                 self.__init__(self._params)
                 return self.ex(query, param, True)
         else:
-            data = self.cur.fetchall()
             self.conn.commit()
-            return data
+        finally:
+            try:
+                data = self.cur.fetchall()
+            finally:
+                return data

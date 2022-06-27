@@ -15,7 +15,6 @@ yandex_headers = {'Authorization': constants.DISKAPIKEY}
 bot = TeleBot(constants.APIKEY, parse_mode=None)
 db = DatabaseHandler(constants.DBPARAMS)
 logging.basicConfig(filename='beebot.log',
-                    encoding='utf-8',
                     level=logging.INFO,
                     format='%(levelname)s:%(asctime)s %(message)s')
 stack = {}
@@ -385,10 +384,10 @@ def create_task(message):
             f"{stack[message.chat.id]['taskObject']}")
         bot.send_message(
             message.chat.id,
-            'Теперь отправьте дату поездки в формате 01-01-1970')
+            'Теперь отправьте дату поездки в формате 1970-01-31')
     elif not stack[message.chat.id]['taskDate']:
         try:
-            date = dt.datetime.strptime(message.text, "%d-%m-%Y")
+            date = dt.datetime.strptime(message.text, "%Y-%m-%d")
             tommorow = dt.datetime.now().replace(hour=0, minute=0, second=0,
                                                  microsecond=0) + dt.timedelta(
                 days=1)
@@ -403,7 +402,7 @@ def create_task(message):
         except ValueError:
             bot.send_message(
                 message.chat.id,
-                'Дата поездки должна быть в формате 01-01-1970'
+                'Дата поездки должна быть в формате 1970-01-31'
                 ' и не должна быть в будущем'
             )
     elif not stack[message.chat.id]['taskCar']:
@@ -527,7 +526,8 @@ def create_task(message):
                  stack[message.chat.id]['taskCar'],
                  stack[message.chat.id]['taskTime'],
                  stack[message.chat.id]['taskIncome'],
-                 stack[message.chat.id]['taskDate']))[0][0]
+                 stack[message.chat.id]['taskDate']))
+            id_task = id_task[0][0]
             id_task_maker = db.ex(
                 'SELECT id FROM employee WHERE chatid = %s',
                 (message.chat.id,))[0][0]
@@ -858,7 +858,7 @@ def callback_query(call):
         load = db.ex(
             'SELECT COALESCE(name, handle), object,'
             ' wage + task.hoursoverspent * wage / 8,'
-            ' employeetotask.id, task.hoursoverspent AS sum '
+            ' employeetotask.id, task.hoursoverspent AS sum, task.time '
             'FROM employeetotask JOIN employee ON employeeid = employee.id'
             ' JOIN task ON taskid = task.id WHERE paid '
             'IS NULL AND wage IS NOT NULL LIMIT 1;')
@@ -866,7 +866,8 @@ def callback_query(call):
             employee_to_task_id = load[0][3]
             amount = load[0][2]
             load = f'Выплата для сотрудника {load[0][0]} за поездку ' \
-                   f'на объект {load[0][1]}\nПереработка: ' \
+                   f'на объект {load[0][1]}\nДата' \
+                   f': {load[0][-1]}\nПереработка: ' \
                    f'{load[0][4]}\nВыплата: {amount}'
             bot.edit_message_text(
                 load, call.from_user.id, call.message.id,

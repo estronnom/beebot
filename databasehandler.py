@@ -26,7 +26,7 @@ class DatabaseHandler:
             print(exc)
             if not retry:
                 try:
-                    self.conn = psycopg2.connect(**self._params)
+                    self.__init__(self._params)
                     return self.ex(query, param, True)
                 except psycopg2.errors as exc:
                     print(exc)

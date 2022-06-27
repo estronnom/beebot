@@ -15,18 +15,14 @@ class DatabaseHandler:
 
     def ex(self, query, param=None, retry=False):
         try:
-            if not param:
-                self.cur.execute(query)
-            else:
-                self.cur.execute(query, param)
-            self.conn.commit()
-            return self.cur.fetchall()
+            self.cur.execute(query, param)
         except Exception as exc:
-            self.conn.commit()
+            self.conn.rollback()
             print(exc)
             if not retry:
-                try:
-                    self.__init__(self._params)
-                    return self.ex(query, param, True)
-                except psycopg2.errors as exc:
-                    print(exc)
+                self.__init__(self._params)
+                return self.ex(query, param, True)
+        else:
+            data = self.cur.fetchall()
+            self.conn.commit()
+            return data

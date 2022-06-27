@@ -132,3 +132,4 @@ constants.py
 yandexloader.py
 asyncyandexloader.py
 .dockerignore
+sqldump.sql
